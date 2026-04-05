@@ -512,7 +512,7 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   };
 
   if(celebration) return (
-    <div style={{position:"fixed",inset:0,zIndex:300,background:"#000d",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}} onClick={onClose}>
+    <div style={{position:"fixed",inset:0,zIndex:300,background:"#000d",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,paddingTop:"env(safe-area-inset-top)"}} onClick={onClose}>
       <div style={{fontSize:60}}>🎉</div>
       <div style={{fontFamily:"'Scheherazade New',serif",fontSize:28,color:"#c9a84c"}}>{s.ar}</div>
       <div style={{fontSize:16,color:"#ddd",fontWeight:700}}>{s.name} — 100% memorisee !</div>
@@ -521,7 +521,7 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   );
 
   if(saved) return (
-    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}}>
+    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099",paddingTop:"env(safe-area-inset-top)"}}>
       <div style={{background:"#111",borderRadius:"16px 16px 0 0",padding:40,textAlign:"center"}}>
         <div style={{fontSize:44}}>✅</div>
         <div style={{color:sec.color,fontSize:16,marginTop:12,fontWeight:700}}>Enregistre !</div>
@@ -871,7 +871,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
       <style>{TAJWEED_CSS}</style>
 
       {/* Top bar */}
-      <div style={{background:"#111",borderBottom:"1px solid #222",padding:"7px 10px",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+      <div style={{background:"#111",borderBottom:"1px solid #222",padding:"7px 10px",paddingTop:"max(7px,env(safe-area-inset-top))",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
         <button onClick={onClose} style={{padding:"5px 8px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#888",fontSize:11,cursor:"pointer",flexShrink:0}}>← Fermer</button>
         <select value={selSurah} onChange={e=>setSelSurah(Number(e.target.value))} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 6px",fontSize:11,outline:"none"}}>
           {SURAHS.map(s=><option key={s.n} value={s.n}>{s.n}. {s.name} — {s.ar}</option>)}
@@ -1842,7 +1842,7 @@ function CorrectorView({sessionId}) {
   if(!session) return <div style={{minHeight:"100vh",background:"#0a0a0a",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{color:"#666",fontSize:14}}>Session introuvable</div></div>;
   const item=SURAHS.find(i=>i.n===Number(session.itemKey));
   return (
-    <div style={{minHeight:"100vh",background:"#0a0a0a",color:"#ddd",fontFamily:"'DM Sans',sans-serif",padding:"18px 14px 40px",maxWidth:500,margin:"0 auto"}}>
+    <div style={{minHeight:"100vh",background:"#0a0a0a",color:"#ddd",fontFamily:"'DM Sans',sans-serif",padding:"18px 14px 40px",paddingTop:"max(18px,env(safe-area-inset-top))",maxWidth:500,margin:"0 auto"}}>
       <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
       <GeoBg/>
       <div style={{position:"relative",zIndex:1}}>
@@ -1937,7 +1937,7 @@ export default function App() {
   const changeSubTab  = t => { setSubTab(t); if(t!=="list"){setFilterMode("surah");setFilterVal("all");} };
 
   if(loading) return (
-    <div style={{minHeight:"100vh",background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14}}>
+    <div style={{minHeight:"100vh",background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,paddingTop:"env(safe-area-inset-top)"}}>
       <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
       <div style={{fontFamily:"'Scheherazade New',serif",fontSize:44,color:"#c9a84c"}}>ثبات</div>
       <div style={{fontSize:10,color:"#333",letterSpacing:3,textTransform:"uppercase"}}>Chargement…</div>
