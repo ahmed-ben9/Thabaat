@@ -655,17 +655,55 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
 
 // ── QURAN API VIEWER ──────────────────────────────────────────────────────────
 // Tajweed color CSS classes from quran.com
-const TAJWEED_CSS = `
-.ham_wasl{color:#AAAAAA}.slnt{color:#AAAAAA}.madda_normal{color:#537FFF}
-.madda_permissible{color:#4050FF}.madda_necessary{color:#000EBC}
-.madda_obligatory{color:#2144C1}.qalaqah{color:#DD0008}
-.ikhafa_shafawi{color:#D500B7}.idgham_shafawi{color:#D500B7}
-.ikhafa{color:#9400A8}.idgham_ghunnah{color:#169200}
-.idgham_wo_ghunnah{color:#169200}.idgham_mutajanisain{color:#169200}
-.idgham_mutaqaribain{color:#169200}.ghunnah{color:#FF7E1E}
-.idgham_with_ghunnah{color:#169200}.idgham_without_ghunnah{color:#169200}
-.laam_shamsiyah{color:#D0A000}.silent{color:#AAAAAA}
+// Tajweed CSS injected into document.head for reliable PWA support
+// Colors based on official quran.com tajweed color system, adapted for dark background
+const TAJWEED_CSS_TEXT = `
+  /* Silent / Wasl */
+  .ham_wasl { color: #AAAAAA !important; }
+  .slnt     { color: #AAAAAA !important; }
+  .silent   { color: #AAAAAA !important; }
+
+  /* Madd (prolongation) — shades of blue/cyan */
+  .madda_normal      { color: #B0C4FF !important; } /* Normal madd 2 — light blue */
+  .madda_permissible { color: #FFB347 !important; } /* Permissible madd — orange */
+  .madda_necessary   { color: #FF4444 !important; } /* Necessary madd 6 — red */
+  .madda_obligatory  { color: #FF6B6B !important; } /* Obligatory madd 4/5 — light red */
+
+  /* Qalqala (echo) — red/pink */
+  .qalaqah { color: #FF3333 !important; }
+
+  /* Ikhfa / Idgham shafawi — pink/magenta */
+  .ikhafa_shafawi  { color: #FF69B4 !important; }
+  .idgham_shafawi  { color: #FF69B4 !important; }
+
+  /* Ikhfa — purple */
+  .ikhafa { color: #CC44FF !important; }
+
+  /* Idgham (merging) — green */
+  .idgham_ghunnah          { color: #4CAF50 !important; }
+  .idgham_wo_ghunnah       { color: #4CAF50 !important; }
+  .idgham_mutajanisain     { color: #4CAF50 !important; }
+  .idgham_mutaqaribain     { color: #4CAF50 !important; }
+  .idgham_with_ghunnah     { color: #4CAF50 !important; }
+  .idgham_without_ghunnah  { color: #4CAF50 !important; }
+
+  /* Ghunna (nasalization) — orange */
+  .ghunnah { color: #FF9500 !important; }
+
+  /* Laam shamsiyah — gold */
+  .laam_shamsiyah { color: #FFD700 !important; }
 `;
+
+// Inject CSS into document.head — works reliably in PWA mode
+function injectTajweedCSS() {
+  const id = 'tajweed-styles';
+  if(!document.getElementById(id)) {
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = TAJWEED_CSS_TEXT;
+    document.head.appendChild(style);
+  }
+}
 
 // Audio URL format — built directly at click time (no intermediate API call)
 // This guarantees iOS/Android play works synchronously with user tap
@@ -768,6 +806,8 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
     setLoading(false);
   }, []);
 
+  // Inject tajweed CSS into document.head on mount (works in PWA)
+  useEffect(()=>{ injectTajweedCSS(); }, []);
   useEffect(()=>{ loadSurah(selSurah); }, [selSurah]);
   useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
 
@@ -868,7 +908,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   return (
     <div style={{position:"fixed",inset:0,zIndex:300,background:"#0a0a0a",display:"flex",flexDirection:"column"}}>
       <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet"/>
-      <style>{TAJWEED_CSS}</style>
+      
 
       {/* Top bar */}
       <div style={{background:"#111",borderBottom:"1px solid #222",padding:"7px 10px",paddingTop:"max(7px,env(safe-area-inset-top))",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
