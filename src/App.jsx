@@ -979,6 +979,22 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
     loadTafsir(verseKey, tafsirLang);
   };
 
+  const handleVerseNav = (e) => {
+    if(e.key !== "Enter") return;
+    const val = e.target.value.trim();
+    const parts = val.split(":");
+    if(parts.length === 2) {
+      const sn = Number(parts[0]), vn = Number(parts[1]);
+      const s = SURAHS.find(x => x.n === sn);
+      if(s && vn >= 1 && vn <= s.v) {
+        setSelSurah(sn);
+        setPage(Math.ceil(vn / VERSES_PER_PAGE));
+        e.target.value = "";
+        window.scrollTo(0, 0);
+      }
+    }
+  };
+
   const playVerseInternal = async (verseN, remaining) => {
     if(audioRef.current){audioRef.current.pause();audioRef.current=null;}
     const reciter = RECITERS[reciterIdx];
@@ -1087,22 +1103,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
         <input
           placeholder="S:V"
           style={{width:50,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 6px",fontSize:11,outline:"none",textAlign:"center"}}
-          onKeyDown={e=>{
-            if(e.key!=="Enter") return;
-            const val = e.target.value.trim();
-            const parts = val.split(":");
-            if(parts.length===2){
-              const sn=Number(parts[0]), vn=Number(parts[1]);
-              const s=SURAHS.find(x=>x.n===sn);
-              if(s&&vn>=1&&vn<=s.v){
-                setSelSurah(sn);
-                const targetPage=Math.ceil(vn/VERSES_PER_PAGE);
-                setPage(targetPage);
-                e.target.value="";
-                window.scrollTo(0,0);
-              }
-            }
-          }}
+          onKeyDown={handleVerseNav}
         />
         <button onClick={()=>onBookmark(selSurah)} style={{padding:"5px 7px",background:bookmark===selSurah?"#c9a84c22":"#1a1a1a",border:`1px solid ${bookmark===selSurah?"#c9a84c44":"#333"}`,borderRadius:7,color:bookmark===selSurah?"#c9a84c":"#888",fontSize:13,cursor:"pointer",flexShrink:0}}>
           {bookmark===selSurah?"★":"☆"}
@@ -1839,7 +1840,7 @@ function WirdDashboard({state, onNewSession, persist}) {
             {kpct===100&&<div style={{fontFamily:"'Scheherazade New',serif",fontSize:20,color:sec.color,textAlign:"center",marginTop:9}}>تمت الختمة بحمد الله 🎉</div>}
           </>
         ):(
-          <button onClick={async()=>await persist({...state,khatma:{startDate:today(),sessions:[]}})} style={{width:"100%",padding:9,background:sec.color+"11",border:`1px dashed ${sec.color}33`,borderRadius:7,color:sec.color+"88",fontSize:12,cursor:"pointer",marginTop:7}}>
+          <button onClick={()=>persist({...state,khatma:{startDate:today(),sessions:[]}})} style={{width:"100%",padding:9,background:sec.color+"11",border:`1px dashed ${sec.color}33`,borderRadius:7,color:sec.color+"88",fontSize:12,cursor:"pointer",marginTop:7}}>
             + Démarrer une Khatma
           </button>
         )}
