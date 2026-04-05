@@ -445,7 +445,7 @@ function VerseErrorPicker({totalVerses, verseErrors, onChange, readOnly=false}) 
 
 // ── SURAH PANEL ───────────────────────────────────────────────────────────────
 // Opens on surah click: mark entire or by verse range, set mastery
-function SurahPanel({surahN, surahProgress, onClose, onSave, sec}) {
+function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   const s = SURAHS.find(x=>x.n===surahN);
   if(!s) return null;
   const sp = surahProgress[surahN]||{};
@@ -470,15 +470,33 @@ function SurahPanel({surahN, surahProgress, onClose, onSave, sec}) {
       newRanges = [{from:1, to:s.v}];
     } else if(rangeMode && rangeFrom<=rangeTo) {
       newRanges = mergeRanges([...existingRanges, {from:rangeFrom, to:rangeTo}]);
+    } else {
+      // nothing changed, just update mastery
+      newRanges = existingRanges;
     }
     const newPct = surahLearnedPct(newRanges, s.v);
     if(newPct===100 && pct<100) setCelebration(true);
-    await onSave(surahN, {
+    // Build a session entry exactly like HifzSession does
+    const effectiveFrom = entireMode ? 1 : (rangeMode ? rangeFrom : (existingRanges[0]?.from||1));
+    const effectiveTo   = entireMode ? s.v : (rangeMode ? rangeTo : (existingRanges[0]?.to||s.v));
+    const session = {
+      date: today(),
+      type: "solo",
+      partner: null,
+      verseErrors: {},
+      notes: entireMode ? "Sourate entière" : rangeMode ? `v.${rangeFrom}→${rangeTo}` : "Mise à jour niveau",
+      range: {from: effectiveFrom, to: effectiveTo},
+      duration: 1,
+    };
+    const surahData = {
       ...sp,
       learnedRanges: newRanges,
       mastery,
       lastReviewed: today(),
-    });
+      hifzSessions: (entireMode||rangeMode) ? [session, ...(sp.hifzSessions||[])] : (sp.hifzSessions||[]),
+    };
+    // Call exactly the same function as HifzSession
+    await onSaveHifz(surahN, session, surahData, null);
     if(newPct<100) onClose();
     else setTimeout(onClose, 2000);
     setSaving(false);
@@ -614,60 +632,164 @@ function SurahPanel({surahN, surahProgress, onClose, onSave, sec}) {
 }
 
 // ── QURAN API VIEWER ──────────────────────────────────────────────────────────
-function QuranViewer({initialSurah=1, initialVerse=1, onClose, onBookmark, bookmark}) {
+// Tajweed color CSS classes from quran.com
+const TAJWEED_CSS = `
+.ham_wasl{color:#AAAAAA}.slnt{color:#AAAAAA}.madda_normal{color:#537FFF}
+.madda_permissible{color:#4050FF}.madda_necessary{color:#000EBC}
+.madda_obligatory{color:#2144C1}.qalaqah{color:#DD0008}
+.ikhafa_shafawi{color:#D500B7}.idgham_shafawi{color:#D500B7}
+.ikhafa{color:#9400A8}.idgham_ghunnah{color:#169200}
+.idgham_wo_ghunnah{color:#169200}.idgham_mutajanisain{color:#169200}
+.idgham_mutaqaribain{color:#169200}.ghunnah{color:#FF7E1E}
+.idgham_with_ghunnah{color:#169200}.idgham_without_ghunnah{color:#169200}
+.laam_shamsiyah{color:#D0A000}.silent{color:#AAAAAA}
+`;
+
+// Audio URL format — built directly at click time (no intermediate API call)
+// This guarantees iOS/Android play works synchronously with user tap
+const RECITERS = [
+  {id:"ar.alafasy",     label:"Mishary Alafasy (Hafs)",    path:"https://verses.quran.com/Alafasy_128kbps"},
+  {id:"ar.abdurrahmaansudais", label:"Al-Sudais (Hafs)",    path:"https://verses.quran.com/Sudais_128kbps"},
+  {id:"ar.husary",      label:"Al-Husary (Hafs)",           path:"https://verses.quran.com/Husary_128kbps"},
+  {id:"ar.minshawi",    label:"Al-Minshawi (Warsh)",        path:"https://verses.quran.com/Minshawi_Warsh_128kbps"},
+  {id:"ar.husarywash",  label:"Al-Husary (Warsh)",          path:"https://verses.quran.com/Husary_Warsh_128kbps"},
+];
+
+function buildAudioUrl(reciterPath, surahN, verseN) {
+  const s = String(surahN).padStart(3,"0");
+  const v = String(verseN).padStart(3,"0");
+  return `${reciterPath}/${s}${v}.mp3`;
+}
+
+function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const [selSurah,setSelSurah] = useState(initialSurah);
   const [verses,setVerses] = useState([]);
   const [loading,setLoading] = useState(false);
   const [error,setError] = useState(null);
+  const [showTranslation,setShowTranslation] = useState(false);
+  const [showTajweed,setShowTajweed] = useState(true);
+  const [reciterIdx,setReciterIdx] = useState(0);
+  const [playingVerse,setPlayingVerse] = useState(null);
+  const audioRef = useRef(null);
 
   const loadSurah = useCallback(async(n) => {
     setLoading(true); setError(null); setVerses([]);
     try {
-      const r = await fetch(`https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&fields=text_uthmani`);
+      // Fetch text + tajweed + French translation (Montada #169) in one call
+      const url = `https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&translations=169&fields=text_uthmani,text_uthmani_tajweed`;
+      const r = await fetch(url);
       if(!r.ok) throw new Error("API error");
       const d = await r.json();
       setVerses(d.verses||[]);
-    } catch(e) { setError("Impossible de charger la sourate. Vérifie ta connexion."); }
+    } catch(e) {
+      setError("Impossible de charger. Vérifie ta connexion internet.");
+    }
     setLoading(false);
   }, []);
 
-  useEffect(()=>{ loadSurah(selSurah); }, [selSurah]);
+  useEffect(()=>{ loadSurah(selSurah); setPlayingVerse(null); if(audioRef.current){audioRef.current.pause();audioRef.current=null;} }, [selSurah]);
+
+  const playVerse = (verseN) => {
+    // Stop current if playing same verse
+    if(playingVerse===verseN) {
+      audioRef.current?.pause();
+      setPlayingVerse(null);
+      return;
+    }
+    // Stop previous
+    if(audioRef.current) { audioRef.current.pause(); audioRef.current=null; }
+    // Build URL directly — synchronous with tap = works on iOS
+    const url = buildAudioUrl(RECITERS[reciterIdx].path, selSurah, verseN);
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setPlayingVerse(verseN);
+    audio.play().catch(()=>{ setPlayingVerse(null); });
+    audio.onended = () => setPlayingVerse(null);
+    audio.onerror = () => setPlayingVerse(null);
+  };
+
+  // Cleanup on unmount
+  useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
 
   const surah = SURAHS.find(s=>s.n===selSurah);
   return (
     <div style={{position:"fixed",inset:0,zIndex:300,background:"#0a0a0a",display:"flex",flexDirection:"column"}}>
       <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet"/>
+      <style>{TAJWEED_CSS}</style>
+
       {/* Top bar */}
-      <div style={{background:"#111",borderBottom:"1px solid #222",padding:"9px 12px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-        <button onClick={onClose} style={{padding:"5px 10px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#888",fontSize:12,cursor:"pointer"}}>← Fermer</button>
-        <select value={selSurah} onChange={e=>setSelSurah(Number(e.target.value))} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 8px",fontSize:12,outline:"none"}}>
+      <div style={{background:"#111",borderBottom:"1px solid #222",padding:"8px 11px",display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
+        <button onClick={onClose} style={{padding:"5px 9px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#888",fontSize:12,cursor:"pointer",flexShrink:0}}>← Fermer</button>
+        <select value={selSurah} onChange={e=>setSelSurah(Number(e.target.value))} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 7px",fontSize:11,outline:"none"}}>
           {SURAHS.map(s=><option key={s.n} value={s.n}>{s.n}. {s.name} — {s.ar}</option>)}
         </select>
-        <button onClick={()=>onBookmark(selSurah)} style={{padding:"5px 9px",background:bookmark===selSurah?"#c9a84c22":"#1a1a1a",border:`1px solid ${bookmark===selSurah?"#c9a84c44":"#333"}`,borderRadius:7,color:bookmark===selSurah?"#c9a84c":"#888",fontSize:11,cursor:"pointer"}}>
+        <button onClick={()=>onBookmark(selSurah)} style={{padding:"5px 8px",background:bookmark===selSurah?"#c9a84c22":"#1a1a1a",border:`1px solid ${bookmark===selSurah?"#c9a84c44":"#333"}`,borderRadius:7,color:bookmark===selSurah?"#c9a84c":"#888",fontSize:13,cursor:"pointer",flexShrink:0}}>
           {bookmark===selSurah?"★":"☆"}
         </button>
       </div>
-      {/* Surah name */}
-      <div style={{textAlign:"center",padding:"14px 16px 10px",borderBottom:"1px solid #1a1a1a",flexShrink:0}}>
-        <div style={{fontFamily:"'Scheherazade New',serif",fontSize:26,color:"#c9a84c"}}>{surah?.ar}</div>
-        <div style={{fontSize:12,color:"#555",marginTop:2}}>{surah?.name} · {surah?.v} versets · Juz {surah?.juz}</div>
-        {bookmark&&bookmark!==selSurah&&<button onClick={()=>setSelSurah(bookmark)} style={{marginTop:6,padding:"3px 10px",background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#c9a84c",fontSize:10,cursor:"pointer"}}>Reprendre — {SURAHS.find(s=>s.n===bookmark)?.name}</button>}
+
+      {/* Options bar */}
+      <div style={{background:"#0d0d0d",borderBottom:"1px solid #1a1a1a",padding:"7px 11px",display:"flex",alignItems:"center",gap:7,flexShrink:0,flexWrap:"wrap"}}>
+        {/* Tajweed toggle */}
+        <button onClick={()=>setShowTajweed(!showTajweed)} style={{padding:"4px 10px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTajweed?"1px solid #f59e0b55":"1px solid #333",background:showTajweed?"#f59e0b18":"transparent",color:showTajweed?"#f59e0b":"#555"}}>
+          🎨 Tajweed
+        </button>
+        {/* Translation toggle */}
+        <button onClick={()=>setShowTranslation(!showTranslation)} style={{padding:"4px 10px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTranslation?"1px solid #60a5fa55":"1px solid #333",background:showTranslation?"#60a5fa18":"transparent",color:showTranslation?"#60a5fa":"#555"}}>
+          🇫🇷 Traduction
+        </button>
+        {/* Reciter select */}
+        <select value={reciterIdx} onChange={e=>setReciterIdx(Number(e.target.value))} style={{flex:1,minWidth:0,background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#888",padding:"4px 8px",fontSize:9,outline:"none"}}>
+          {RECITERS.map((r,i)=><option key={r.id} value={i}>{r.label}</option>)}
+        </select>
+        {/* Resume bookmark */}
+        {bookmark&&bookmark!==selSurah&&<button onClick={()=>setSelSurah(bookmark)} style={{padding:"4px 9px",background:"#c9a84c18",border:"1px solid #c9a84c44",borderRadius:20,color:"#c9a84c",fontSize:9,cursor:"pointer",flexShrink:0}}>↩ {SURAHS.find(s=>s.n===bookmark)?.name}</button>}
       </div>
-      {/* Content */}
-      <div style={{flex:1,overflowY:"auto",padding:"16px 14px 40px",direction:"rtl"}}>
-        {loading&&<div style={{textAlign:"center",color:"#444",padding:40,direction:"ltr"}}>Chargement…</div>}
-        {error&&<div style={{textAlign:"center",color:"#ef4444",padding:40,direction:"ltr"}}>{error}</div>}
-        {!loading&&!error&&selSurah!==9&&(
-          <div style={{textAlign:"center",fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c",marginBottom:16}}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>
+
+      {/* Surah name header */}
+      <div style={{textAlign:"center",padding:"12px 14px 9px",borderBottom:"1px solid #1a1a1a",flexShrink:0}}>
+        <div style={{fontFamily:"'Scheherazade New',serif",fontSize:26,color:"#c9a84c"}}>{surah?.ar}</div>
+        <div style={{fontSize:11,color:"#555",marginTop:2}}>{surah?.name} · {surah?.v} versets · Juz {surah?.juz}</div>
+      </div>
+
+      {/* Verses */}
+      <div style={{flex:1,overflowY:"auto",padding:"14px 14px 40px"}}>
+        {loading&&<div style={{textAlign:"center",color:"#444",padding:40}}>Chargement…</div>}
+        {error&&<div style={{textAlign:"center",color:"#ef4444",padding:40,fontSize:13}}>{error}</div>}
+        {!loading&&!error&&(
+          <>
+            {selSurah!==9&&<div style={{textAlign:"center",fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c",marginBottom:18,direction:"rtl"}}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
+            {verses.map((v,i)=>{
+              const verseN = i+1;
+              const isPlaying = playingVerse===verseN;
+              const translation = v.translations?.[0]?.text||"";
+              return (
+                <div key={v.id} style={{marginBottom:showTranslation?20:10,borderBottom:"1px solid #1a1a1a",paddingBottom:showTranslation?16:8}}>
+                  {/* Arabic text + play button */}
+                  <div style={{display:"flex",alignItems:"flex-start",gap:8,direction:"rtl"}}>
+                    <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:24,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
+                      {showTajweed && v.text_uthmani_tajweed
+                        ? <span dangerouslySetInnerHTML={{__html: v.text_uthmani_tajweed}}/>
+                        : v.text_uthmani
+                      }
+                      <span style={{color:"#c9a84c77",fontSize:17,marginRight:8}}>﴿{verseN}﴾</span>
+                    </div>
+                    {/* Play button — direction ltr so it doesn't flip */}
+                    <button onClick={()=>playVerse(verseN)} style={{flexShrink:0,direction:"ltr",width:32,height:32,borderRadius:"50%",background:isPlaying?"#60a5fa22":"#1a1a1a",border:`1px solid ${isPlaying?"#60a5fa":"#333"}`,color:isPlaying?"#60a5fa":"#666",fontSize:14,cursor:"pointer",marginTop:6,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {isPlaying?"⏸":"▶"}
+                    </button>
+                  </div>
+                  {/* French translation */}
+                  {showTranslation&&translation&&(
+                    <div style={{fontSize:12,color:"#888",lineHeight:1.7,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
+                      {translation.replace(/<[^>]*>/g,"")}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
         )}
-        <div style={{lineHeight:2.2}}>
-          {verses.map((v,i)=>(
-            <span key={v.id} style={{fontFamily:"'Scheherazade New',serif",fontSize:22,color:"#e8e0d0"}}>
-              {v.text_uthmani}
-              <span style={{color:"#c9a84c88",fontSize:16,margin:"0 6px"}}>﴿{i+1}﴾</span>
-            </span>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -777,15 +899,11 @@ function HifzDashboard({state, onNewSession}) {
 }
 
 // ── HIFZ LIST ─────────────────────────────────────────────────────────────────
-function HifzList({state, persist, filterMode, filterVal}) {
+function HifzList({state, onSaveHifz, filterMode, filterVal}) {
   const sec = SECTIONS.hifz;
   const pm = state.surahProgress||{};
   const [search,setSearch] = useState("");
   const [selectedSurah,setSelectedSurah] = useState(null);
-
-  const saveSurahData = async (surahN, data) => {
-    await persist({...state, surahProgress:{...pm, [surahN]:data}});
-  };
 
   let list = SURAHS;
   if(filterMode==="juz"&&filterVal!=="all"){const j=getJuzInfo(Number(filterVal));list=SURAHS.filter(s=>s.n>=j.startSurah&&s.n<=j.endSurah);}
@@ -824,7 +942,7 @@ function HifzList({state, persist, filterMode, filterVal}) {
           );
         })}
       </div>
-      {selectedSurah&&<SurahPanel surahN={selectedSurah} surahProgress={pm} onClose={()=>setSelectedSurah(null)} onSave={saveSurahData} sec={sec}/>}
+      {selectedSurah&&<SurahPanel surahN={selectedSurah} surahProgress={pm} onClose={()=>setSelectedSurah(null)} onSaveHifz={onSaveHifz} sec={sec}/>}
     </div>
   );
 }
@@ -1052,12 +1170,11 @@ function MurajaDashboard({state, onNewSession}) {
 }
 
 // ── MURAJA LIST ───────────────────────────────────────────────────────────────
-function MurajaList({state, persist, filterMode, filterVal}) {
+function MurajaList({state, onSaveHifz, filterMode, filterVal}) {
   const sec = SECTIONS.muraja;
   const pm = state.surahProgress||{};
   const [search,setSearch] = useState("");
   const [sel,setSel] = useState(null);
-  const saveSurahData = async (surahN, data) => { await persist({...state,surahProgress:{...pm,[surahN]:data}}); };
   let list = SURAHS.filter(s=>pm[s.n]?.learnedRanges?.length>0&&surahLearnedPct(pm[s.n].learnedRanges,s.v)>0);
   if(filterMode==="juz"&&filterVal!=="all"){const j=getJuzInfo(Number(filterVal));list=list.filter(s=>s.n>=j.startSurah&&s.n<=j.endSurah);}
   else if(filterMode==="hizb"&&filterVal!=="all"){const h=getHizbInfo(Number(filterVal));list=list.filter(s=>s.n>=h.startSurah&&s.n<=h.endSurah);}
@@ -1092,7 +1209,7 @@ function MurajaList({state, persist, filterMode, filterVal}) {
           })}
         </div>
       }
-      {sel&&<SurahPanel surahN={sel} surahProgress={pm} onClose={()=>setSel(null)} onSave={saveSurahData} sec={sec}/>}
+      {sel&&<SurahPanel surahN={sel} surahProgress={pm} onClose={()=>setSel(null)} onSaveHifz={onSaveHifz} sec={sec}/>}
     </div>
   );
 }
@@ -1679,7 +1796,7 @@ export default function App() {
         </div>
         {/* Nav buttons */}
         <div style={{display:"flex",gap:4}}>
-          <button onClick={()=>{setShowQuran(true);}} style={{width:29,height:29,borderRadius:7,background:"#111",border:"1px solid #222",color:"#c9a84c",fontSize:14,cursor:"pointer"}}>☽</button>
+          <button onClick={()=>{setShowQuran(true);}} style={{width:29,height:29,borderRadius:7,background:"#111",border:"1px solid #222",color:"#c9a84c",fontSize:16,cursor:"pointer"}}>📖</button>
           <button onClick={()=>setGlobalTab(globalTab==="stats"?"main":"stats")} style={{width:29,height:29,borderRadius:7,background:globalTab==="stats"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="stats"?"#c9a84c44":"#222"}`,color:globalTab==="stats"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>S</button>
           <button onClick={()=>setGlobalTab(globalTab==="leaderboard"?"main":"leaderboard")} style={{width:29,height:29,borderRadius:7,background:globalTab==="leaderboard"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="leaderboard"?"#c9a84c44":"#222"}`,color:globalTab==="leaderboard"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>C</button>
           <button onClick={()=>setGlobalTab(globalTab==="profile"?"main":"profile")} style={{width:29,height:29,borderRadius:7,background:globalTab==="profile"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="profile"?"#c9a84c44":"#222"}`,color:globalTab==="profile"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>P</button>
@@ -1707,11 +1824,11 @@ export default function App() {
             )}
 
             {section==="hifz"&&subTab==="dashboard"&&<HifzDashboard state={state} onNewSession={()=>changeSubTab("session")}/>}
-            {section==="hifz"&&subTab==="list"&&<HifzList state={state} persist={persist} filterMode={filterMode} filterVal={filterVal}/>}
+            {section==="hifz"&&subTab==="list"&&<HifzList state={state} onSaveHifz={onSaveHifz} filterMode={filterMode} filterVal={filterVal}/>}
             {section==="hifz"&&subTab==="session"&&<HifzSession state={state} onSave={onSaveHifz} onDone={()=>changeSubTab("dashboard")}/>}
 
             {section==="muraja"&&subTab==="dashboard"&&<MurajaDashboard state={state} onNewSession={()=>changeSubTab("session")}/>}
-            {section==="muraja"&&subTab==="list"&&<MurajaList state={state} persist={persist} filterMode={filterMode} filterVal={filterVal}/>}
+            {section==="muraja"&&subTab==="list"&&<MurajaList state={state} onSaveHifz={onSaveHifz} filterMode={filterMode} filterVal={filterVal}/>}
             {section==="muraja"&&subTab==="session"&&<MurajaSession state={state} onSave={onSaveMuraja} onDone={()=>changeSubTab("dashboard")}/>}
 
             {section==="wird"&&subTab==="dashboard"&&<WirdDashboard state={state} onNewSession={()=>changeSubTab("session")} persist={persist}/>}
