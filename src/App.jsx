@@ -532,9 +532,9 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",display:"flex",flexDirection:"column",maxHeight:"85vh"}}>
-        {/* Scrollable content */}
-        <div style={{overflowY:"auto",padding:"16px 16px 8px",flex:1,WebkitOverflowScrolling:"touch"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",display:"flex",flexDirection:"column",maxHeight:"75vh"}}>
+        {/* Scrollable content — padding-bottom leaves room for fixed button */}
+        <div style={{overflowY:"auto",padding:"16px 16px 80px",flex:1,WebkitOverflowScrolling:"touch"}}>
           {/* Header */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
             <div>
@@ -643,12 +643,12 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
           )}
         </div>
 
-        {/* Save button — FIXED outside scroll, always visible */}
-        <div style={{padding:"10px 16px",paddingBottom:"max(10px,env(safe-area-inset-bottom))",borderTop:"1px solid #222",background:"#111",borderRadius:"0 0 16px 16px",flexShrink:0}}>
-          <button onClick={save} disabled={saving} style={{width:"100%",padding:14,background:saving?"#333":`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${sec.border}`,borderRadius:10,color:saving?"#666":sec.color,fontSize:15,cursor:saving?"not-allowed":"pointer",fontWeight:700}}>
-            {saving ? "Enregistrement..." : "✓ Enregistrer"}
-          </button>
-        </div>
+      </div>
+      {/* Save button — position:fixed, completely outside panel, always visible on PWA */}
+      <div onClick={e=>e.stopPropagation()} style={{position:"fixed",bottom:0,left:0,right:0,zIndex:201,padding:"10px 16px",paddingBottom:"max(16px,env(safe-area-inset-bottom))",background:"#111",borderTop:"1px solid #222"}}>
+        <button onClick={save} disabled={saving} style={{width:"100%",padding:15,background:saving?"#1a1a1a":`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${saving?"#333":sec.border}`,borderRadius:10,color:saving?"#555":sec.color,fontSize:15,cursor:saving?"not-allowed":"pointer",fontWeight:700}}>
+          {saving ? "Enregistrement..." : "✓ Enregistrer"}
+        </button>
       </div>
     </div>
   );
@@ -672,24 +672,48 @@ const TAJWEED_CSS = `
 // Audio URL format — built directly at click time (no intermediate API call)
 // This guarantees iOS/Android play works synchronously with user tap
 // Reciters with everyayah.com folder names (reliable CDN, good CORS)
+// Reciters: everyayah.com (confirmed working) + Quran.com API (for others)
 const RECITERS = [
-  // Hafs
-  {label:"Mishary Alafasy (Hafs)",          folder:"Alafasy_128kbps",       warsh:false},
-  {label:"Al-Sudais (Hafs)",                folder:"Sudais_128kbps",         warsh:false},
-  {label:"Al-Husary (Hafs)",                folder:"Husary_128kbps",         warsh:false},
-  {label:"Maher Al-Muaiqly (Hafs)",         folder:"MaherAlMuaiqly_128kbps",warsh:false},
-  {label:"Saad Al-Ghamdi (Hafs)",           folder:"Ghamadi_40kbps",         warsh:false},
-  // Warsh
-  {label:"Khalil Al-Husary (Warsh)",        folder:"Husary_Murattal_Warsh_128kbps", warsh:true},
-  {label:"Al-Minshawi (Warsh)",             folder:"Minshawi_Warsh_128kbps",        warsh:true},
-  {label:"Ibrahim Al-Akhdar (Warsh)",       folder:"IbrahimAlAkhdar_128kbps",       warsh:true},
+  // Hafs — everyayah.com (confirmed working)
+  {label:"Mishary Alafasy (Hafs)",    source:"everyayah", folder:"Alafasy_128kbps",  warsh:false},
+  {label:"Al-Husary (Hafs)",          source:"everyayah", folder:"Husary_128kbps",   warsh:false},
+  {label:"Saad Al-Ghamdi (Hafs)",     source:"everyayah", folder:"Ghamadi_40kbps",   warsh:false},
+  // Hafs — Quran.com API (verified IDs)
+  {label:"Al-Sudais (Hafs)",          source:"qurancom",  recitationId:9,            warsh:false},
+  {label:"Maher Al-Muaiqly (Hafs)",   source:"qurancom",  recitationId:10,           warsh:false},
+  // Warsh — Quran.com API (verified IDs)
+  {label:"Al-Husary (Warsh)",         source:"qurancom",  recitationId:2,            warsh:true},
+  {label:"Al-Minshawi (Warsh)",       source:"qurancom",  recitationId:6,            warsh:true},
 ];
 
-// everyayah.com is the most reliable source with CORS support
-function buildAudioUrl(folder, surahN, verseN) {
+// Build URL for everyayah.com reciters
+function buildEveryayahUrl(folder, surahN, verseN) {
   const s = String(surahN).padStart(3,"0");
   const v = String(verseN).padStart(3,"0");
   return `https://everyayah.com/data/${folder}/${s}${v}.mp3`;
+}
+
+// Cache for Quran.com audio URLs {recitationId_surahN: {verseN: url}}
+const audioUrlCache = {};
+
+async function getQuranComAudioUrl(recitationId, surahN, verseN) {
+  const cacheKey = `${recitationId}_${surahN}`;
+  if(!audioUrlCache[cacheKey]) {
+    try {
+      const r = await fetch(`https://api.quran.com/api/v4/recitations/${recitationId}/by_chapter/${surahN}`);
+      if(!r.ok) throw new Error("API error");
+      const d = await r.json();
+      audioUrlCache[cacheKey] = {};
+      (d.audio_files||[]).forEach(a => {
+        // verse_key format: "2:255"
+        const vn = Number(a.verse_key.split(":")[1]);
+        audioUrlCache[cacheKey][vn] = `https://verses.quran.com/${a.url}`;
+      });
+    } catch(e) {
+      return null;
+    }
+  }
+  return audioUrlCache[cacheKey][verseN] || null;
 }
 
 function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
@@ -749,9 +773,21 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   useEffect(()=>{ loadSurah(selSurah); }, [selSurah]);
   useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
 
-  const playVerseInternal = (verseN, remaining) => {
+  const playVerseInternal = async (verseN, remaining) => {
     if(audioRef.current){audioRef.current.pause();audioRef.current=null;}
-    const url = buildAudioUrl(RECITERS[reciterIdx].folder, selSurahRef.current, verseN);
+    const reciter = RECITERS[reciterIdx];
+    let url;
+    if(reciter.source === "everyayah") {
+      url = buildEveryayahUrl(reciter.folder, selSurahRef.current, verseN);
+    } else {
+      // Quran.com API — fetch URLs for this surah (cached)
+      url = await getQuranComAudioUrl(reciter.recitationId, selSurahRef.current, verseN);
+      if(!url) {
+        setPlayingVerse(null);
+        setAudioError(`Impossible de charger l'audio pour ${reciter.label}`);
+        return;
+      }
+    }
     const audio = new Audio(url);
     audio.preload = "auto";
     audioRef.current = audio;
@@ -760,11 +796,11 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
     const p = audio.play();
     if(p) p.catch(err=>{
       setPlayingVerse(null);
-      setAudioError(`Recitateur indisponible: ${RECITERS[reciterIdx].label} — essaie un autre`);
+      setAudioError(`Lecture impossible pour ${reciter.label}`);
     });
     audio.onerror = () => {
       setPlayingVerse(null);
-      setAudioError(`Fichier introuvable pour ${RECITERS[reciterIdx].label} (dossier: ${RECITERS[reciterIdx].folder})`);
+      setAudioError(`Audio introuvable pour ${reciter.label}`);
     };
     audio.onended = () => {
       const rem = loopRemainingRef.current - 1;
