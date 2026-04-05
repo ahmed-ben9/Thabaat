@@ -450,6 +450,7 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   if(!s) return null;
   const sp = surahProgress[surahN]||{};
   const existingRanges = sp.learnedRanges||[];
+  const existingSessions = sp.hifzSessions||[];
   const pct = surahLearnedPct(existingRanges, s.v);
   const [mastery,setMastery] = useState(sp.mastery||null);
   const [entireMode,setEntireMode] = useState(false);
@@ -457,49 +458,64 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   const [rangeFrom,setRangeFrom] = useState(1);
   const [rangeTo,setRangeTo] = useState(s.v);
   const [saving,setSaving] = useState(false);
+  const [saved,setSaved] = useState(false);
   const [celebration,setCelebration] = useState(false);
-  const sessions = sp.hifzSessions||[];
-  const errRate = surahErrorRate(sessions);
+  const errRate = surahErrorRate(existingSessions);
   const due = mastery ? isDueForReview(mastery, sp.lastReviewed) : false;
   const vNums = Array.from({length:s.v},(_,i)=>i+1);
 
+  // Preview new pct based on current selections
+  const previewRanges = entireMode
+    ? [{from:1,to:s.v}]
+    : rangeMode && rangeFrom<=rangeTo
+      ? mergeRanges([...existingRanges,{from:rangeFrom,to:rangeTo}])
+      : existingRanges;
+  const previewPct = surahLearnedPct(previewRanges, s.v);
+
   const save = async () => {
     setSaving(true);
-    let newRanges = existingRanges;
+
+    // Determine new ranges
+    let newRanges;
     if(entireMode) {
       newRanges = [{from:1, to:s.v}];
     } else if(rangeMode && rangeFrom<=rangeTo) {
       newRanges = mergeRanges([...existingRanges, {from:rangeFrom, to:rangeTo}]);
     } else {
-      // nothing changed, just update mastery
+      // Only mastery changed — keep existing ranges
       newRanges = existingRanges;
     }
+
     const newPct = surahLearnedPct(newRanges, s.v);
-    if(newPct===100 && pct<100) setCelebration(true);
-    // Build a session entry exactly like HifzSession does
-    const effectiveFrom = entireMode ? 1 : (rangeMode ? rangeFrom : (existingRanges[0]?.from||1));
-    const effectiveTo   = entireMode ? s.v : (rangeMode ? rangeTo : (existingRanges[0]?.to||s.v));
-    const session = {
+    const willCelebrate = newPct===100 && pct<100;
+    const addSession = entireMode || (rangeMode && rangeFrom<=rangeTo);
+
+    // Build session entry (same structure as HifzSession)
+    const session = addSession ? {
       date: today(),
       type: "solo",
       partner: null,
       verseErrors: {},
-      notes: entireMode ? "Sourate entière" : rangeMode ? `v.${rangeFrom}→${rangeTo}` : "Mise à jour niveau",
-      range: {from: effectiveFrom, to: effectiveTo},
+      notes: entireMode ? "Sourate entiere (marquage direct)" : `v.${rangeFrom}->v.${rangeTo} (marquage direct)`,
+      range: {from: entireMode?1:rangeFrom, to: entireMode?s.v:rangeTo},
       duration: 1,
-    };
+    } : null;
+
+    // Build full surahData — keep ALL existing fields, only overwrite what changed
     const surahData = {
-      ...sp,
-      learnedRanges: newRanges,
-      mastery,
+      ...sp,                          // preserve everything (other metadata)
+      learnedRanges: newRanges,       // updated ranges
+      mastery: mastery,               // updated mastery
       lastReviewed: today(),
-      hifzSessions: (entireMode||rangeMode) ? [session, ...(sp.hifzSessions||[])] : (sp.hifzSessions||[]),
+      hifzSessions: session
+        ? [session, ...existingSessions]
+        : existingSessions,
     };
-    // Call exactly the same function as HifzSession
-    await onSaveHifz(surahN, session, surahData, null);
-    if(newPct<100) onClose();
-    else setTimeout(onClose, 2000);
+
+    await onSaveHifz(String(surahN), session||{date:today(),range:{from:1,to:1},verseErrors:{}}, surahData, null);
     setSaving(false);
+    if(willCelebrate) { setCelebration(true); setTimeout(onClose, 2500); }
+    else { setSaved(true); setTimeout(onClose, 800); }
   };
 
   if(celebration) return (
@@ -508,6 +524,16 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
       <div style={{fontFamily:"'Scheherazade New',serif",fontSize:28,color:"#c9a84c"}}>{s.ar}</div>
       <div style={{fontSize:16,color:"#ddd",fontWeight:700}}>{s.name} — 100% mémorisée !</div>
       <div style={{fontFamily:"'Scheherazade New',serif",fontSize:18,color:"#4ade80"}}>بارك الله فيك</div>
+    </div>
+  );
+
+  if(saved) return (
+    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}}>
+      <div style={{background:"#111",borderRadius:"16px 16px 0 0",padding:40,textAlign:"center"}}>
+        <div style={{fontSize:44}}>✅</div>
+        <div style={{color:sec.color,fontSize:16,marginTop:12,fontWeight:700}}>Sauvegardé !</div>
+        <div style={{color:"#555",fontSize:12,marginTop:6}}>{s.name} mis à jour — {previewPct}% mémorisé</div>
+      </div>
     </div>
   );
 
@@ -524,23 +550,25 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
           <button onClick={onClose} style={{background:"transparent",border:"none",color:"#555",fontSize:24,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>×</button>
         </div>
 
-        {/* Progress bar */}
+        {/* Progress bar — shows preview */}
         <div style={{marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5}}>
             <span style={{color:"#555"}}>Mémorisé</span>
-            <span style={{color:sec.color,fontWeight:700}}>{pct}%</span>
+            <span style={{color:sec.color,fontWeight:700}}>
+              {previewPct!==pct ? <>{pct}% → <span style={{color:"#4ade80"}}>{previewPct}%</span></> : `${pct}%`}
+            </span>
           </div>
           <div style={{height:5,background:"#1a1a1a",borderRadius:5,overflow:"hidden"}}>
-            <div style={{height:"100%",width:`${pct}%`,background:sec.color,borderRadius:5,transition:"width .4s"}}/>
+            <div style={{height:"100%",width:`${previewPct}%`,background:sec.color,borderRadius:5,transition:"width .4s"}}/>
           </div>
-          {existingRanges.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:7}}>
-            {existingRanges.map((r,i)=><span key={i} style={{fontSize:10,color:sec.color+"88",background:sec.color+"11",border:`1px solid ${sec.color}22`,borderRadius:20,padding:"2px 8px"}}>v.{r.from}→{r.to}</span>)}
+          {previewRanges.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:7}}>
+            {previewRanges.map((r,i)=><span key={i} style={{fontSize:10,color:sec.color+"88",background:sec.color+"11",border:`1px solid ${sec.color}22`,borderRadius:20,padding:"2px 8px"}}>v.{r.from}→{r.to}</span>)}
           </div>}
         </div>
 
         {/* Stats */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:14}}>
-          {[{l:"Séances",v:sessions.length,c:"#60a5fa"},{l:"Err/séance",v:errRate,c:errRate>2?"#ef4444":"#4ade80"},{l:"À réviser",v:due?"Oui":"Non",c:due?"#ef4444":"#4ade80"}].map(c=>(
+          {[{l:"Séances",v:existingSessions.length,c:"#60a5fa"},{l:"Err/séance",v:errRate,c:errRate>2?"#ef4444":"#4ade80"},{l:"À réviser",v:due?"Oui":"Non",c:due?"#ef4444":"#4ade80"}].map(c=>(
             <div key={c.l} style={{background:"#0d0d0d",border:"1px solid #1a1a1a",borderRadius:8,padding:"9px 5px",textAlign:"center"}}>
               <div style={{fontSize:15,fontWeight:700,color:c.c,fontFamily:"monospace"}}>{c.v}</div>
               <div style={{fontSize:10,color:"#444",textTransform:"uppercase",marginTop:2}}>{c.l}</div>
@@ -591,7 +619,7 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
                   </select>
                 </div>
               </div>
-              <div style={{marginTop:8,fontSize:11,color:sec.color+"88",textAlign:"center"}}>{rangeTo-rangeFrom+1} versets · nouveau total: {surahLearnedPct(mergeRanges([...existingRanges,{from:rangeFrom,to:rangeTo}]),s.v)}%</div>
+              <div style={{marginTop:8,fontSize:11,color:sec.color+"88",textAlign:"center"}}>{rangeTo-rangeFrom+1} versets · nouveau total : {previewPct}%</div>
             </div>
           )}
         </div>
@@ -611,10 +639,10 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
         </div>
 
         {/* Last sessions */}
-        {sessions.length>0&&(
+        {existingSessions.length>0&&(
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,color:"#555",textTransform:"uppercase",marginBottom:7}}>Dernières séances</div>
-            {sessions.slice(0,3).map((sess,i)=>(
+            {existingSessions.slice(0,3).map((sess,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:"1px solid #1a1a1a"}}>
                 <span style={{color:"#888"}}>{formatHijri(sess.date)} · v.{sess.range?.from}→{sess.range?.to}</span>
                 <span style={{color:Object.keys(sess.verseErrors||{}).length>0?"#ef4444":"#4ade80"}}>{Object.keys(sess.verseErrors||{}).length} err.</span>
@@ -647,18 +675,20 @@ const TAJWEED_CSS = `
 
 // Audio URL format — built directly at click time (no intermediate API call)
 // This guarantees iOS/Android play works synchronously with user tap
+// Reciter IDs from cdn.islamic.network - reliable, CORS-friendly
 const RECITERS = [
-  {id:"ar.alafasy",     label:"Mishary Alafasy (Hafs)",    path:"https://verses.quran.com/Alafasy_128kbps"},
-  {id:"ar.abdurrahmaansudais", label:"Al-Sudais (Hafs)",    path:"https://verses.quran.com/Sudais_128kbps"},
-  {id:"ar.husary",      label:"Al-Husary (Hafs)",           path:"https://verses.quran.com/Husary_128kbps"},
-  {id:"ar.minshawi",    label:"Al-Minshawi (Warsh)",        path:"https://verses.quran.com/Minshawi_Warsh_128kbps"},
-  {id:"ar.husarywash",  label:"Al-Husary (Warsh)",          path:"https://verses.quran.com/Husary_Warsh_128kbps"},
+  {id:"ar.alafasy",           label:"Mishary Alafasy (Hafs)"},
+  {id:"ar.abdurrahmaansudais",label:"Al-Sudais (Hafs)"},
+  {id:"ar.husary",            label:"Al-Husary (Hafs)"},
+  {id:"ar.minshawi",          label:"Al-Minshawi (Hafs)"},
+  {id:"ar.mahermuaiqly",      label:"Maher Al-Muaiqly (Hafs)"},
 ];
 
-function buildAudioUrl(reciterPath, surahN, verseN) {
+// Build audio URL using cdn.islamic.network (CORS-friendly, always works)
+function buildAudioUrl(reciterId, surahN, verseN) {
   const s = String(surahN).padStart(3,"0");
   const v = String(verseN).padStart(3,"0");
-  return `${reciterPath}/${s}${v}.mp3`;
+  return `https://cdn.islamic.network/quran/audio/128/${reciterId}/${s}${v}.mp3`;
 }
 
 function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
@@ -675,10 +705,12 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const loadSurah = useCallback(async(n) => {
     setLoading(true); setError(null); setVerses([]);
     try {
-      // Fetch text + tajweed + French translation (Montada #169) in one call
-      const url = `https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&translations=169&fields=text_uthmani,text_uthmani_tajweed`;
+      // Single call: Arabic text + tajweed + French translation
+      // Translation IDs: 131=Hamidullah (fr), 169=Montada (fr)
+      // Using both fields in one request
+      const url = `https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&translations=131,169&fields=text_uthmani,text_uthmani_tajweed`;
       const r = await fetch(url);
-      if(!r.ok) throw new Error("API error");
+      if(!r.ok) throw new Error(`API error ${r.status}`);
       const d = await r.json();
       setVerses(d.verses||[]);
     } catch(e) {
@@ -689,8 +721,11 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
 
   useEffect(()=>{ loadSurah(selSurah); setPlayingVerse(null); if(audioRef.current){audioRef.current.pause();audioRef.current=null;} }, [selSurah]);
 
+  const [audioError,setAudioError] = useState(null);
+
   const playVerse = (verseN) => {
-    // Stop current if playing same verse
+    setAudioError(null);
+    // Toggle off if same verse
     if(playingVerse===verseN) {
       audioRef.current?.pause();
       setPlayingVerse(null);
@@ -698,14 +733,22 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
     }
     // Stop previous
     if(audioRef.current) { audioRef.current.pause(); audioRef.current=null; }
-    // Build URL directly — synchronous with tap = works on iOS
-    const url = buildAudioUrl(RECITERS[reciterIdx].path, selSurah, verseN);
+    // URL built synchronously at tap time — works on iOS
+    const url = buildAudioUrl(RECITERS[reciterIdx].id, selSurah, verseN);
     const audio = new Audio(url);
+    audio.preload = "auto";
     audioRef.current = audio;
     setPlayingVerse(verseN);
-    audio.play().catch(()=>{ setPlayingVerse(null); });
-    audio.onended = () => setPlayingVerse(null);
-    audio.onerror = () => setPlayingVerse(null);
+    const playPromise = audio.play();
+    if(playPromise!==undefined) {
+      playPromise.catch(err=>{
+        console.error("Audio play error:", err, url);
+        setPlayingVerse(null);
+        setAudioError("Lecture impossible — essaie un autre récitateur");
+      });
+    }
+    audio.onended = () => { setPlayingVerse(null); audioRef.current=null; };
+    audio.onerror = () => { setPlayingVerse(null); audioRef.current=null; setAudioError("Fichier audio introuvable pour ce récitateur"); };
   };
 
   // Cleanup on unmount
@@ -756,15 +799,19 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
       <div style={{flex:1,overflowY:"auto",padding:"14px 14px 40px"}}>
         {loading&&<div style={{textAlign:"center",color:"#444",padding:40}}>Chargement…</div>}
         {error&&<div style={{textAlign:"center",color:"#ef4444",padding:40,fontSize:13}}>{error}</div>}
+        {audioError&&<div style={{background:"#ef444411",border:"1px solid #ef444433",borderRadius:8,padding:"8px 12px",fontSize:11,color:"#ef4444",margin:"0 0 12px 0"}}>{audioError}</div>}
         {!loading&&!error&&(
           <>
             {selSurah!==9&&<div style={{textAlign:"center",fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c",marginBottom:18,direction:"rtl"}}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
             {verses.map((v,i)=>{
               const verseN = i+1;
               const isPlaying = playingVerse===verseN;
-              const translation = v.translations?.[0]?.text||"";
+              // Get translation — try index 0 (first translation returned)
+              const rawTranslation = v.translations?.[0]?.text || v.translations?.[1]?.text || "";
+              // Strip HTML tags (some translations contain <sup> footnote markers)
+              const translation = rawTranslation.replace(/<[^>]*>/g,"").trim();
               return (
-                <div key={v.id} style={{marginBottom:showTranslation?20:10,borderBottom:"1px solid #1a1a1a",paddingBottom:showTranslation?16:8}}>
+                <div key={v.id} style={{marginBottom:16,borderBottom:"1px solid #1a1a1a",paddingBottom:12}}>
                   {/* Arabic text + play button */}
                   <div style={{display:"flex",alignItems:"flex-start",gap:8,direction:"rtl"}}>
                     <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:24,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
@@ -774,15 +821,15 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
                       }
                       <span style={{color:"#c9a84c77",fontSize:17,marginRight:8}}>﴿{verseN}﴾</span>
                     </div>
-                    {/* Play button — direction ltr so it doesn't flip */}
-                    <button onClick={()=>playVerse(verseN)} style={{flexShrink:0,direction:"ltr",width:32,height:32,borderRadius:"50%",background:isPlaying?"#60a5fa22":"#1a1a1a",border:`1px solid ${isPlaying?"#60a5fa":"#333"}`,color:isPlaying?"#60a5fa":"#666",fontSize:14,cursor:"pointer",marginTop:6,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {/* Play button — direction ltr so it doesn't flip on RTL */}
+                    <button onClick={()=>playVerse(verseN)} style={{flexShrink:0,direction:"ltr",width:34,height:34,borderRadius:"50%",background:isPlaying?"#60a5fa22":"#1a1a1a",border:`1.5px solid ${isPlaying?"#60a5fa":"#333"}`,color:isPlaying?"#60a5fa":"#666",fontSize:14,cursor:"pointer",marginTop:8,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
                       {isPlaying?"⏸":"▶"}
                     </button>
                   </div>
                   {/* French translation */}
-                  {showTranslation&&translation&&(
-                    <div style={{fontSize:12,color:"#888",lineHeight:1.7,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
-                      {translation.replace(/<[^>]*>/g,"")}
+                  {showTranslation&&(
+                    <div style={{fontSize:12,color:translation?"#999":"#444",lineHeight:1.8,marginTop:8,direction:"ltr",fontStyle:"italic",borderLeft:`2px solid #60a5fa${translation?"44":"22"}`,paddingLeft:10}}>
+                      {translation || "Traduction non disponible pour ce verset"}
                     </div>
                   )}
                 </div>
