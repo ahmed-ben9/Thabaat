@@ -521,11 +521,13 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   );
 
   if(saved) return (
-    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099",paddingTop:"env(safe-area-inset-top)"}}>
-      <div style={{background:"#111",borderRadius:"16px 16px 0 0",padding:40,textAlign:"center"}}>
+    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099",paddingTop:"env(safe-area-inset-top)"}} onClick={onClose}>
+      <div style={{background:"#111",borderRadius:"16px 16px 0 0",padding:36,textAlign:"center"}}>
         <div style={{fontSize:44}}>✅</div>
-        <div style={{color:sec.color,fontSize:16,marginTop:12,fontWeight:700}}>Enregistre !</div>
-        <div style={{color:"#555",fontSize:12,marginTop:6}}>{s.name} — {previewPct}% memorise</div>
+        <div style={{color:sec.color,fontSize:17,marginTop:12,fontWeight:700}}>Sauvegarde !</div>
+        <div style={{fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c",marginTop:6}}>{s.ar}</div>
+        <div style={{color:"#888",fontSize:13,marginTop:4}}>{s.name} — <span style={{color:sec.color,fontWeight:700}}>{previewPct}%</span> memorise</div>
+        {previewPct===100&&<div style={{fontFamily:"'Scheherazade New',serif",color:"#4ade80",fontSize:18,marginTop:8}}>بارك الله فيك 🎉</div>}
       </div>
     </div>
   );
@@ -655,6 +657,143 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
 
 // ── QURAN API VIEWER ──────────────────────────────────────────────────────────
 // Tajweed color CSS classes from quran.com
+// TafsirText component with "Voir plus/moins"
+function TafsirText({text, lang}) {
+  const [expanded, setExpanded] = useState(false);
+  const LIMIT = 600;
+  const isLong = text.length > LIMIT;
+  const displayed = (!isLong || expanded) ? text : text.slice(0, LIMIT) + "…";
+  return (
+    <div>
+      <div style={{fontSize:13,color:"#bbb",lineHeight:1.9,direction:lang==="ar"?"rtl":"ltr",textAlign:lang==="ar"?"right":"left",fontFamily:lang==="ar"?"'Scheherazade New',serif":"inherit"}}>
+        {displayed}
+      </div>
+      {isLong&&(
+        <button onClick={()=>setExpanded(!expanded)} style={{marginTop:10,padding:"5px 14px",background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#888",fontSize:11,cursor:"pointer"}}>
+          {expanded?"Voir moins ▲":"Voir plus ▼"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Tajweed CSS injected into document.head for reliable PWA support
+// Colors matching quran.com official tajweed color system (verified from screenshot)
+const TAJWEED_CSS_TEXT = `
+  /* Silent / Hamza Wasl */
+  .ham_wasl { color: #AAAAAA !important; }
+  .slnt     { color: #AAAAAA !important; }
+  .silent   { color: #AAAAAA !important; }
+
+  /* Madd - Normal (2 vowels) — yellow/gold */
+  .madda_normal      { color: #F5C518 !important; }
+
+  /* Madd - Permissible/Separated (2/4/6 vowels) — orange */
+  .madda_permissible { color: #F97316 !important; }
+
+  /* Madd - Obligatory/Connected (4/5 vowels) — red */
+  .madda_obligatory  { color: #DC2626 !important; }
+
+  /* Madd - Necessary (6 vowels) — dark red */
+  .madda_necessary   { color: #EF4444 !important; }
+
+  /* Qalqala (echo) — light blue */
+  .qalaqah { color: #60A5FA !important; }
+  .qlq      { color: #60A5FA !important; }
+
+  /* Tafkhim (heavy/emphasis) — dark blue */
+  .laam_shamsiyah { color: #3B82F6 !important; }
+
+  /* Ghunna (nasalization) — green */
+  .ghunnah { color: #22C55E !important; }
+
+  /* Ikhfa (concealment) — green */
+  .ikhafa          { color: #22C55E !important; }
+  .ikhf            { color: #22C55E !important; }
+
+  /* Ikhfa Shafawi (with meem) — green */
+  .ikhafa_shafawi  { color: #16A34A !important; }
+  .ikhf_shfw       { color: #16A34A !important; }
+
+  /* Idgham with ghunna — green */
+  .idgham_ghunnah         { color: #22C55E !important; }
+  .idgh_ghn               { color: #22C55E !important; }
+  .idgham_with_ghunnah    { color: #22C55E !important; }
+  .idgham_mutajanisain    { color: #22C55E !important; }
+  .idgham_mutaqaribain    { color: #22C55E !important; }
+
+  /* Idgham without ghunna — lighter green */
+  .idgham_wo_ghunnah      { color: #4ADE80 !important; }
+  .idgham_without_ghunnah { color: #4ADE80 !important; }
+
+  /* Idgham Shafawi (with meem) — green */
+  .idgham_shafawi  { color: #16A34A !important; }
+  .idghm_shfw      { color: #16A34A !important; }
+
+  /* Iqlab — purple/pink */
+  .iqlb { color: #A855F7 !important; }
+`;
+
+
+// Inject CSS into document.head — works reliably in PWA mode
+function injectTajweedCSS() {
+  const id = 'tajweed-styles';
+  if(!document.getElementById(id)) {
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = TAJWEED_CSS_TEXT;
+    document.head.appendChild(style);
+  }
+}
+
+// Audio URL format — built directly at click time (no intermediate API call)
+// This guarantees iOS/Android play works synchronously with user tap
+// Reciters with everyayah.com folder names (reliable CDN, good CORS)
+// Reciters: everyayah.com (confirmed working) + Quran.com API (for others)
+const RECITERS = [
+  // Hafs — everyayah.com (confirmed working)
+  {label:"Mishary Alafasy (Hafs)",    source:"everyayah", folder:"Alafasy_128kbps",  warsh:false},
+  {label:"Al-Husary (Hafs)",          source:"everyayah", folder:"Husary_128kbps",   warsh:false},
+  {label:"Saad Al-Ghamdi (Hafs)",     source:"everyayah", folder:"Ghamadi_40kbps",   warsh:false},
+  // Hafs — Quran.com API (verified IDs)
+  {label:"Al-Sudais (Hafs)",          source:"qurancom",  recitationId:9,            warsh:false},
+  {label:"Maher Al-Muaiqly (Hafs)",   source:"qurancom",  recitationId:10,           warsh:false},
+  // Warsh — Quran.com API (verified IDs)
+  {label:"Al-Husary (Warsh)",         source:"qurancom",  recitationId:2,            warsh:true},
+  {label:"Al-Minshawi (Warsh)",       source:"qurancom",  recitationId:6,            warsh:true},
+];
+
+// Build URL for everyayah.com reciters
+function buildEveryayahUrl(folder, surahN, verseN) {
+  const s = String(surahN).padStart(3,"0");
+  const v = String(verseN).padStart(3,"0");
+  return `https://everyayah.com/data/${folder}/${s}${v}.mp3`;
+}
+
+// Cache for Quran.com audio URLs {recitationId_surahN: {verseN: url}}
+const audioUrlCache = {};
+
+async function getQuranComAudioUrl(recitationId, surahN, verseN) {
+  const cacheKey = `${recitationId}_${surahN}`;
+  if(!audioUrlCache[cacheKey]) {
+    try {
+      const r = await fetch(`https://api.quran.com/api/v4/recitations/${recitationId}/by_chapter/${surahN}`);
+      if(!r.ok) throw new Error("API error");
+      const d = await r.json();
+      audioUrlCache[cacheKey] = {};
+      (d.audio_files||[]).forEach(a => {
+        // verse_key format: "2:255"
+        const vn = Number(a.verse_key.split(":")[1]);
+        audioUrlCache[cacheKey][vn] = `https://verses.quran.com/${a.url}`;
+      });
+    } catch(e) {
+      return null;
+    }
+  }
+  return audioUrlCache[cacheKey][verseN] || null;
+}
+
+
 // Tajweed CSS injected into document.head for reliable PWA support
 // Colors matching quran.com official tajweed color system (verified from screenshot)
 const TAJWEED_CSS_TEXT = `
@@ -772,193 +911,6 @@ async function getQuranComAudioUrl(recitationId, surahN, verseN) {
 }
 
 // Complete tajweed rules reference
-const TAJWEED_RULES_MAP = {
-  ham_wasl: {
-    name: "Hamzat ul-Wasl",
-    ar: "همزة الوصل",
-    color: "#AAAAAA",
-    desc: "Lettre de liaison — se prononce uniquement en début de récitation, sinon silencieuse.",
-    letters: "ا",
-    rule: "Wasl",
-  },
-  slnt: {
-    name: "Lettre silencieuse",
-    ar: "حرف صامت",
-    color: "#AAAAAA",
-    desc: "Lettre écrite mais non prononcée dans la récitation.",
-    letters: "",
-    rule: "Silent",
-  },
-  madda_normal: {
-    name: "Madd Normal",
-    ar: "مد طبيعي",
-    color: "#F5C518",
-    desc: "Prolongation naturelle de 2 temps (harakat). Présente sur les lettres de madd (ا و ي) suivies d'une voyelle.",
-    letters: "ا و ي",
-    rule: "Madd 2",
-  },
-  madda_permissible: {
-    name: "Madd Permissible",
-    ar: "مد جائز منفصل",
-    color: "#F97316",
-    desc: "Madd séparé — la lettre de madd est dans un mot et la hamza dans le suivant. Prolongation 2, 4 ou 6 temps selon le récitateur.",
-    letters: "ا و ي + ء",
-    rule: "Madd 2/4/6",
-  },
-  madda_obligatory: {
-    name: "Madd Obligatoire",
-    ar: "مد واجب متصل",
-    color: "#DC2626",
-    desc: "Madd connecté — la lettre de madd et la hamza sont dans le même mot. Prolongation obligatoire de 4 ou 5 temps.",
-    letters: "ا و ي + ء (même mot)",
-    rule: "Madd 4/5",
-  },
-  madda_necessary: {
-    name: "Madd Nécessaire",
-    ar: "مد لازم",
-    color: "#EF4444",
-    desc: "Madd nécessaire — lettre de madd suivie d'une sukun fixe. Prolongation obligatoire de 6 temps.",
-    letters: "ا و ي + سكون",
-    rule: "Madd 6",
-  },
-  qalaqah: {
-    name: "Qalqala",
-    ar: "قلقلة",
-    color: "#60A5FA",
-    desc: "Rebond sonore produit sur 5 lettres spécifiques quand elles portent un sukun. Le son rebondit légèrement.",
-    letters: "ق ط ب ج د",
-    rule: "Qalqala",
-  },
-  qlq: {
-    name: "Qalqala",
-    ar: "قلقلة",
-    color: "#60A5FA",
-    desc: "Rebond sonore produit sur 5 lettres spécifiques quand elles portent un sukun.",
-    letters: "ق ط ب ج د",
-    rule: "Qalqala",
-  },
-  ghunnah: {
-    name: "Ghunna",
-    ar: "غنة",
-    color: "#22C55E",
-    desc: "Son nasal de 2 temps produit par le nez. Présent sur le Noun et le Meem mushadda.",
-    letters: "ن م (مشددة)",
-    rule: "Ghunna",
-  },
-  ikhafa: {
-    name: "Ikhfa",
-    ar: "إخفاء",
-    color: "#22C55E",
-    desc: "Occultation — le Noun sâkin ou Tanwin est prononcé entre l'izhar et l'idgham, avec ghunna de 2 temps.",
-    letters: "ت ث ج د ذ ز س ش ص ض ط ظ ف ق ك",
-    rule: "Ikhfa",
-  },
-  ikhf: {
-    name: "Ikhfa",
-    ar: "إخفاء",
-    color: "#22C55E",
-    desc: "Occultation — le Noun sâkin ou Tanwin est prononcé avec ghunna de 2 temps.",
-    letters: "ت ث ج د ذ ز س ش ص ض ط ظ ف ق ك",
-    rule: "Ikhfa",
-  },
-  ikhafa_shafawi: {
-    name: "Ikhfa Shafawi",
-    ar: "إخفاء شفوي",
-    color: "#16A34A",
-    desc: "Ikhfa labial — le Meem sâkin est occulté devant le Ba, avec ghunna de 2 temps.",
-    letters: "م + ب",
-    rule: "Ikhfa Shafawi",
-  },
-  ikhf_shfw: {
-    name: "Ikhfa Shafawi",
-    ar: "إخفاء شفوي",
-    color: "#16A34A",
-    desc: "Ikhfa labial — le Meem sâkin est occulté devant le Ba, avec ghunna.",
-    letters: "م + ب",
-    rule: "Ikhfa Shafawi",
-  },
-  idgham_ghunnah: {
-    name: "Idgham avec Ghunna",
-    ar: "إدغام بغنة",
-    color: "#22C55E",
-    desc: "Fusion avec nasalisation — le Noun sâkin ou Tanwin est fusionné avec la lettre suivante, avec ghunna de 2 temps.",
-    letters: "ي ن م و",
-    rule: "Idgham",
-  },
-  idgham_wo_ghunnah: {
-    name: "Idgham sans Ghunna",
-    ar: "إدغام بلا غنة",
-    color: "#4ADE80",
-    desc: "Fusion sans nasalisation — le Noun sâkin ou Tanwin est fusionné avec la lettre suivante, sans ghunna.",
-    letters: "ل ر",
-    rule: "Idgham",
-  },
-  idgham_with_ghunnah: {
-    name: "Idgham avec Ghunna",
-    ar: "إدغام بغنة",
-    color: "#22C55E",
-    desc: "Fusion avec nasalisation de 2 temps.",
-    letters: "ي ن م و",
-    rule: "Idgham",
-  },
-  idgham_without_ghunnah: {
-    name: "Idgham sans Ghunna",
-    ar: "إدغام بلا غنة",
-    color: "#4ADE80",
-    desc: "Fusion sans nasalisation.",
-    letters: "ل ر",
-    rule: "Idgham",
-  },
-  idgham_shafawi: {
-    name: "Idgham Shafawi",
-    ar: "إدغام شفوي",
-    color: "#16A34A",
-    desc: "Fusion labiale — le Meem sâkin est fusionné avec un autre Meem, avec ghunna de 2 temps.",
-    letters: "م + م",
-    rule: "Idgham Shafawi",
-  },
-  idghm_shfw: {
-    name: "Idgham Shafawi",
-    ar: "إدغام شفوي",
-    color: "#16A34A",
-    desc: "Fusion labiale — Meem sâkin + Meem, avec ghunna.",
-    letters: "م + م",
-    rule: "Idgham Shafawi",
-  },
-  idgham_mutajanisain: {
-    name: "Idgham Mutajanisayn",
-    ar: "إدغام المتجانسين",
-    color: "#22C55E",
-    desc: "Fusion de deux lettres du même point d'articulation.",
-    letters: "ت د ط / ث ذ ظ / م ب",
-    rule: "Idgham",
-  },
-  idgham_mutaqaribain: {
-    name: "Idgham Mutaqaribuyn",
-    ar: "إدغام المتقاربين",
-    color: "#22C55E",
-    desc: "Fusion de deux lettres aux points d'articulation proches.",
-    letters: "ق + ك / ل + ر",
-    rule: "Idgham",
-  },
-  iqlb: {
-    name: "Iqlab",
-    ar: "إقلاب",
-    color: "#A855F7",
-    desc: "Transformation — le Noun sâkin ou Tanwin se transforme en Meem devant le Ba, avec ghunna de 2 temps.",
-    letters: "ن / تنوين + ب",
-    rule: "Iqlab",
-  },
-  laam_shamsiyah: {
-    name: "Laam Shamsiyya",
-    ar: "لام شمسية",
-    color: "#3B82F6",
-    desc: "Laam solaire — le 'Al' de définition, la laam est assimilée à la lettre suivante (lettre solaire).",
-    letters: "ت ث د ذ ر ز س ش ص ض ط ظ ل ن",
-    rule: "Laam",
-  },
-};
-
 function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const VERSES_PER_PAGE = 10;
   const [selSurah,setSelSurah] = useState(initialSurah);
@@ -1156,9 +1108,29 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
       {/* Top bar */}
       <div style={{background:"#111",borderBottom:"1px solid #222",padding:"7px 10px",paddingTop:"max(7px,env(safe-area-inset-top))",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
         <button onClick={onClose} style={{padding:"5px 8px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#888",fontSize:11,cursor:"pointer",flexShrink:0}}>← Fermer</button>
-        <select value={selSurah} onChange={e=>setSelSurah(Number(e.target.value))} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 6px",fontSize:11,outline:"none"}}>
+        <select value={selSurah} onChange={e=>{setSelSurah(Number(e.target.value));setPage(1);}} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 6px",fontSize:11,outline:"none"}}>
           {SURAHS.map(s=><option key={s.n} value={s.n}>{s.n}. {s.name} — {s.ar}</option>)}
         </select>
+        <input
+          placeholder="S:V"
+          style={{width:50,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 6px",fontSize:11,outline:"none",textAlign:"center"}}
+          onKeyDown={e=>{
+            if(e.key!=="Enter") return;
+            const val = e.target.value.trim();
+            const parts = val.split(":");
+            if(parts.length===2){
+              const sn=Number(parts[0]), vn=Number(parts[1]);
+              const s=SURAHS.find(x=>x.n===sn);
+              if(s&&vn>=1&&vn<=s.v){
+                setSelSurah(sn);
+                const targetPage=Math.ceil(vn/VERSES_PER_PAGE);
+                setPage(targetPage);
+                e.target.value="";
+                window.scrollTo(0,0);
+              }
+            }
+          }}
+        />
         <button onClick={()=>onBookmark(selSurah)} style={{padding:"5px 7px",background:bookmark===selSurah?"#c9a84c22":"#1a1a1a",border:`1px solid ${bookmark===selSurah?"#c9a84c44":"#333"}`,borderRadius:7,color:bookmark===selSurah?"#c9a84c":"#888",fontSize:13,cursor:"pointer",flexShrink:0}}>
           {bookmark===selSurah?"★":"☆"}
         </button>
@@ -1207,7 +1179,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
               const isPlaying = playingVerse===verseN;
               const isLooping = loopVerse===verseN;
               return (
-                <div key={v.id} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10}}>
+                <div key={v.id} onClick={()=>openTafsir(verseN, `${selSurah}:${verseN}`, v.text_uthmani, v._translation)} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10,cursor:"pointer"}}>
                   <div style={{display:"flex",alignItems:"flex-start",gap:7,direction:"rtl"}}>
                     <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
                       {showTajweed&&v.text_uthmani_tajweed
@@ -1225,14 +1197,11 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
                         🔁
                         {isLooping&&loopRemaining>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#f59e0b",color:"#000",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>{loopRemaining}</span>}
                       </button>
-                      {/* Tafsir button */}
-                      <button onClick={()=>openTafsir(verseN, `${selSurah}:${verseN}`, v.text_uthmani, v._translation)} style={{width:32,height:32,borderRadius:"50%",background:tafsirVerse?.verseN===verseN?"#c9a84c22":"#1a1a1a",border:`1.5px solid ${tafsirVerse?.verseN===verseN?"#c9a84c":"#333"}`,color:tafsirVerse?.verseN===verseN?"#c9a84c":"#666",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        📖
-                      </button>
+
                     </div>
                   </div>
                   {showTranslation&&(
-                    <div style={{fontSize:12,color:v._translation?"#999":"#444",lineHeight:1.8,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
+                    <div style={{fontSize:13,color:v._translation?"#bbb":"#444",lineHeight:1.9,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
                       {v._translation||"Traduction non disponible"}
                     </div>
                   )}
@@ -1307,9 +1276,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
             <div style={{flex:1,overflowY:"auto",padding:"12px 16px 20px",WebkitOverflowScrolling:"touch"}}>
               {tafsirLoading&&<div style={{textAlign:"center",color:"#555",padding:20}}>Chargement du tafsir…</div>}
               {!tafsirLoading&&tafsirText&&(
-                <div style={{fontSize:13,color:"#bbb",lineHeight:1.9,direction:tafsirLang==='ar'?"rtl":"ltr",textAlign:tafsirLang==='ar'?"right":"left",fontFamily:tafsirLang==='ar'?"'Scheherazade New',serif":"inherit"}}>
-                  {tafsirText}
-                </div>
+                <TafsirText text={tafsirText} lang={tafsirLang}/>
               )}
             </div>
           </div>
@@ -1319,15 +1286,15 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
       {/* Pagination */}
       {!loading&&!error&&totalPages>1&&(
         <div style={{background:"#111",borderTop:"1px solid #1a1a1a",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-          <button onClick={()=>setPage(Math.max(1,page-1))} disabled={page===1} style={{padding:"5px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:page===1?"#333":"#888",fontSize:12,cursor:page===1?"not-allowed":"pointer"}}>← Préc</button>
+          <button onClick={()=>{setPage(Math.max(1,page-1));window.scrollTo(0,0);}} disabled={page===1} style={{padding:"5px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:page===1?"#333":"#888",fontSize:12,cursor:page===1?"not-allowed":"pointer"}}>← Préc</button>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:11,color:"#555"}}>Page</span>
-            <select value={page} onChange={e=>setPage(Number(e.target.value))} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:6,color:"#ddd",padding:"3px 6px",fontSize:12,outline:"none"}}>
+            <select value={page} onChange={e=>{setPage(Number(e.target.value));window.scrollTo(0,0);}} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:6,color:"#ddd",padding:"3px 6px",fontSize:12,outline:"none"}}>
               {Array.from({length:totalPages},(_,i)=>i+1).map(p=><option key={p} value={p}>{p}</option>)}
             </select>
             <span style={{fontSize:11,color:"#555"}}>/ {totalPages}</span>
           </div>
-          <button onClick={()=>setPage(Math.min(totalPages,page+1))} disabled={page===totalPages} style={{padding:"5px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:page===totalPages?"#333":"#888",fontSize:12,cursor:page===totalPages?"not-allowed":"pointer"}}>Suiv →</button>
+          <button onClick={()=>{setPage(Math.min(totalPages,page+1));window.scrollTo(0,0);}} disabled={page===totalPages} style={{padding:"5px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:page===totalPages?"#333":"#888",fontSize:12,cursor:page===totalPages?"not-allowed":"pointer"}}>Suiv →</button>
         </div>
       )}
     </div>
@@ -1406,9 +1373,12 @@ function HifzDashboard({state, onNewSession}) {
         <div style={{background:"#111",border:`1px solid ${sec.color}33`,borderRadius:10,padding:12,marginBottom:10}}>
           <div style={{fontSize:10,color:sec.color,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>À réviser aujourd'hui</div>
           {dueSurahs.map(s=>{const m=MASTERY[pm[s.n]?.mastery];return(
-            <div key={s.n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #1a1a1a"}}>
-              <span style={{fontSize:13,color:"#ccc"}}>{s.name}</span>
-              {m&&<span style={{fontSize:10,color:m.color,background:m.color+"22",borderRadius:20,padding:"2px 8px"}}>{m.label}</span>}
+            <div key={s.n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #1a1a1a"}}>
+              <div>
+                <span style={{fontSize:13,color:"#ccc"}}>{s.name}</span>
+                {m&&<span style={{fontSize:10,color:m.color,background:m.color+"22",borderRadius:20,padding:"2px 8px",marginLeft:6}}>{m.label}</span>}
+              </div>
+              <button onClick={onNewSession} style={{padding:"3px 10px",background:sec.color+"18",border:`1px solid ${sec.color}44`,borderRadius:20,color:sec.color,fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>Réviser →</button>
             </div>
           );})}
         </div>
@@ -2106,7 +2076,11 @@ function Leaderboard({state, persist}) {
   useEffect(()=>{
     if(!state.profile?.name) return;
     const pm=state.surahProgress||{};
-    const mem=SURAHS.filter(s=>surahLearnedPct(pm[s.n]?.learnedRanges,s.v)===100).length;
+    // Count memorized verses (more accurate than surah count)
+    const mem=SURAHS.reduce((total,s)=>{
+      const pct=surahLearnedPct(pm[s.n]?.learnedRanges,s.v);
+      return total+Math.round(pct*s.v/100);
+    },0);
     dbSet(`leaderboard/${UID}`,{name:state.profile.name,memorized:mem,streak:state.streak?.count||0,updatedAt:today()});
   },[state.profile,state.surahProgress]);
   const createGroup=async()=>{if(!newGroupName.trim()) return;const gid=genId();await dbSet(`groups/${gid}`,{name:newGroupName,creator:UID,members:{[UID]:state.profile?.name||"Moi"},code:gid});await dbSet(`userGroups/${UID}/${gid}`,{gid,name:newGroupName});setNewGroupName("");};
@@ -2131,7 +2105,7 @@ function Leaderboard({state, persist}) {
           <div key={f.uid} style={{background:f.uid===UID?"#111822":"#111",border:`1px solid ${f.uid===UID?"#60a5fa33":"#1a1a1a"}`,borderRadius:10,padding:"10px 13px",display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:26,height:26,borderRadius:"50%",background:i===0?"#c9a84c22":i===1?"#88888822":"#0d0d0d",border:`1px solid ${i===0?"#c9a84c":i===1?"#888":"#222"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:i===0?"#c9a84c":i===1?"#aaa":"#444",flexShrink:0}}>{i+1}</div>
             <div style={{flex:1}}><div style={{fontSize:13,color:f.uid===UID?"#60a5fa":"#ccc",fontWeight:500}}>{f.name}{f.uid===UID?" (moi)":""}</div><div style={{fontSize:10,color:"#444",marginTop:1}}>✨ {f.streak||0}j consécutifs</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:700,color:"#60a5fa",fontFamily:"monospace"}}>{f.memorized||0}</div><div style={{fontSize:9,color:"#444",textTransform:"uppercase"}}>mémorisées</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:700,color:"#60a5fa",fontFamily:"monospace"}}>{f.memorized||0}</div><div style={{fontSize:9,color:"#444",textTransform:"uppercase"}}>versets</div></div>
           </div>
         ))}
       </div>}
@@ -2336,7 +2310,7 @@ export default function App() {
         </div>
         {/* Nav buttons */}
         <div style={{display:"flex",gap:4}}>
-          <button onClick={()=>{setShowQuran(true);}} style={{width:29,height:29,borderRadius:7,background:"#111",border:"1px solid #222",color:"#c9a84c",fontSize:16,cursor:"pointer"}}>📖</button>
+          <button onClick={()=>{setShowQuran(true);}} style={{width:34,height:34,borderRadius:8,background:"#111",border:"1px solid #c9a84c33",color:"#c9a84c",fontSize:18,cursor:"pointer"}}>📖</button>
           <button onClick={()=>setGlobalTab(globalTab==="stats"?"main":"stats")} style={{width:29,height:29,borderRadius:7,background:globalTab==="stats"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="stats"?"#c9a84c44":"#222"}`,color:globalTab==="stats"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>S</button>
           <button onClick={()=>setGlobalTab(globalTab==="leaderboard"?"main":"leaderboard")} style={{width:29,height:29,borderRadius:7,background:globalTab==="leaderboard"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="leaderboard"?"#c9a84c44":"#222"}`,color:globalTab==="leaderboard"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>C</button>
           <button onClick={()=>setGlobalTab(globalTab==="profile"?"main":"profile")} style={{width:29,height:29,borderRadius:7,background:globalTab==="profile"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="profile"?"#c9a84c44":"#222"}`,color:globalTab==="profile"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>P</button>
