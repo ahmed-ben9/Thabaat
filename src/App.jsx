@@ -501,11 +501,10 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
       duration: 1,
     } : null;
 
-    // Build full surahData — keep ALL existing fields, only overwrite what changed
+    // Build surahData — explicitly set all fields, no spread to avoid stale/undefined
     const surahData = {
-      ...sp,                          // preserve everything (other metadata)
-      learnedRanges: newRanges,       // updated ranges
-      mastery: mastery,               // updated mastery
+      learnedRanges: newRanges,
+      mastery: mastery || null,
       lastReviewed: today(),
       hifzSessions: session
         ? [session, ...existingSessions]
@@ -539,7 +538,10 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",padding:18,maxHeight:"88vh",overflowY:"auto"}}>
+      {/* Panel: flex column so button stays at bottom */}
+      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {/* Scrollable content */}
+        <div style={{overflowY:"auto",padding:"18px 18px 0 18px",flex:1}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
           <div>
@@ -651,9 +653,13 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
           </div>
         )}
 
-        <button onClick={save} disabled={saving} style={{width:"100%",padding:13,background:`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${sec.border}`,borderRadius:10,color:sec.color,fontSize:14,cursor:"pointer",fontWeight:700,opacity:saving?0.7:1}}>
-          {saving ? "Sauvegarde…" : "Sauvegarder"}
-        </button>
+        </div>{/* end scrollable */}
+        {/* Save button — OUTSIDE scroll, always visible */}
+        <div style={{padding:"12px 18px 24px",borderTop:"1px solid #1a1a1a",background:"#111",borderRadius:"0 0 16px 16px"}}>
+          <button onClick={save} disabled={saving} style={{width:"100%",padding:15,background:`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${sec.border}`,borderRadius:10,color:sec.color,fontSize:15,cursor:"pointer",fontWeight:700,opacity:saving?0.7:1}}>
+            {saving ? "Sauvegarde…" : "✓ Enregistrer"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -675,20 +681,20 @@ const TAJWEED_CSS = `
 
 // Audio URL format — built directly at click time (no intermediate API call)
 // This guarantees iOS/Android play works synchronously with user tap
-// Reciter IDs from cdn.islamic.network - reliable, CORS-friendly
+// Reciters with everyayah.com folder names (reliable CDN, good CORS)
 const RECITERS = [
-  {id:"ar.alafasy",           label:"Mishary Alafasy (Hafs)"},
-  {id:"ar.abdurrahmaansudais",label:"Al-Sudais (Hafs)"},
-  {id:"ar.husary",            label:"Al-Husary (Hafs)"},
-  {id:"ar.minshawi",          label:"Al-Minshawi (Hafs)"},
-  {id:"ar.mahermuaiqly",      label:"Maher Al-Muaiqly (Hafs)"},
+  {label:"Mishary Alafasy (Hafs)",    folder:"Alafasy_128kbps"},
+  {label:"Al-Sudais (Hafs)",          folder:"Sudais_128kbps"},
+  {label:"Al-Husary (Hafs)",          folder:"Husary_128kbps"},
+  {label:"Al-Minshawi (Hafs)",        folder:"Minshawi_128kbps"},
+  {label:"Maher Al-Muaiqly (Hafs)",   folder:"MaherAlMuaiqly_128kbps"},
 ];
 
-// Build audio URL using cdn.islamic.network (CORS-friendly, always works)
-function buildAudioUrl(reciterId, surahN, verseN) {
+// everyayah.com is the most reliable source with CORS support
+function buildAudioUrl(folder, surahN, verseN) {
   const s = String(surahN).padStart(3,"0");
   const v = String(verseN).padStart(3,"0");
-  return `https://cdn.islamic.network/quran/audio/128/${reciterId}/${s}${v}.mp3`;
+  return `https://everyayah.com/data/${folder}/${s}${v}.mp3`;
 }
 
 function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
@@ -705,14 +711,16 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const loadSurah = useCallback(async(n) => {
     setLoading(true); setError(null); setVerses([]);
     try {
-      // Single call: Arabic text + tajweed + French translation
-      // Translation IDs: 131=Hamidullah (fr), 169=Montada (fr)
-      // Using both fields in one request
-      const url = `https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&translations=131,169&fields=text_uthmani,text_uthmani_tajweed`;
+      // Single call: text + tajweed + French translation (id=31 Hamidullah FR, well-supported)
+      const url = `https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&fields=text_uthmani,text_uthmani_tajweed&translations=31`;
       const r = await fetch(url);
       if(!r.ok) throw new Error(`API error ${r.status}`);
       const d = await r.json();
-      setVerses(d.verses||[]);
+      const versesArr = (d.verses||[]).map(v => ({
+        ...v,
+        _translation: (v.translations?.[0]?.text||"").replace(/<[^>]*>/g,"").trim()
+      }));
+      setVerses(versesArr);
     } catch(e) {
       setError("Impossible de charger. Vérifie ta connexion internet.");
     }
@@ -734,7 +742,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
     // Stop previous
     if(audioRef.current) { audioRef.current.pause(); audioRef.current=null; }
     // URL built synchronously at tap time — works on iOS
-    const url = buildAudioUrl(RECITERS[reciterIdx].id, selSurah, verseN);
+    const url = buildAudioUrl(RECITERS[reciterIdx].folder, selSurah, verseN);
     const audio = new Audio(url);
     audio.preload = "auto";
     audioRef.current = audio;
@@ -783,7 +791,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
         </button>
         {/* Reciter select */}
         <select value={reciterIdx} onChange={e=>setReciterIdx(Number(e.target.value))} style={{flex:1,minWidth:0,background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#888",padding:"4px 8px",fontSize:9,outline:"none"}}>
-          {RECITERS.map((r,i)=><option key={r.id} value={i}>{r.label}</option>)}
+          {RECITERS.map((r,i)=><option key={i} value={i}>{r.label}</option>)}
         </select>
         {/* Resume bookmark */}
         {bookmark&&bookmark!==selSurah&&<button onClick={()=>setSelSurah(bookmark)} style={{padding:"4px 9px",background:"#c9a84c18",border:"1px solid #c9a84c44",borderRadius:20,color:"#c9a84c",fontSize:9,cursor:"pointer",flexShrink:0}}>↩ {SURAHS.find(s=>s.n===bookmark)?.name}</button>}
@@ -807,8 +815,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
               const verseN = i+1;
               const isPlaying = playingVerse===verseN;
               // Get translation — try index 0 (first translation returned)
-              const rawTranslation = v.translations?.[0]?.text || v.translations?.[1]?.text || "";
-              // Strip HTML tags (some translations contain <sup> footnote markers)
+              const rawTranslation = v._translation || "";
               const translation = rawTranslation.replace(/<[^>]*>/g,"").trim();
               return (
                 <div key={v.id} style={{marginBottom:16,borderBottom:"1px solid #1a1a1a",paddingBottom:12}}>
