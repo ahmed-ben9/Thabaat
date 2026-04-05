@@ -535,16 +535,19 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
       <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",display:"flex",flexDirection:"column",maxHeight:"75vh"}}>
         {/* Scrollable content — padding-bottom leaves room for fixed button */}
         <div style={{overflowY:"auto",padding:"16px 16px 80px",flex:1,WebkitOverflowScrolling:"touch"}}>
-          {/* Header */}
+          {/* Header — Enregistrer visible immediatement */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-            <div>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:16,color:"#ddd",fontWeight:700}}>{s.name}</div>
               <div style={{fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c"}}>{s.ar}</div>
               <div style={{fontSize:11,color:"#555",marginTop:2}}>Juz {s.juz} · {s.v} versets</div>
             </div>
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <button onClick={resetAll} style={{padding:"4px 9px",background:"#ef444411",border:"1px solid #ef444433",borderRadius:7,color:"#ef4444",fontSize:10,cursor:"pointer"}}>Reset</button>
-              <button onClick={onClose} style={{background:"transparent",border:"none",color:"#555",fontSize:22,cursor:"pointer",padding:"0 4px"}}>×</button>
+            <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,marginLeft:8}}>
+              <button onClick={save} disabled={saving} style={{padding:"8px 12px",background:saving?"#1a1a1a":`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${saving?"#333":sec.border}`,borderRadius:8,color:saving?"#555":sec.color,fontSize:13,cursor:saving?"not-allowed":"pointer",fontWeight:700,whiteSpace:"nowrap"}}>
+                {saving ? "..." : "✓ Enreg."}
+              </button>
+              <button onClick={resetAll} style={{padding:"8px 9px",background:"#ef444411",border:"1px solid #ef444433",borderRadius:8,color:"#ef4444",fontSize:11,cursor:"pointer"}}>Reset</button>
+              <button onClick={onClose} style={{background:"transparent",border:"none",color:"#555",fontSize:22,cursor:"pointer",padding:"0 2px",lineHeight:1}}>×</button>
             </div>
           </div>
 
@@ -644,12 +647,7 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
         </div>
 
       </div>
-      {/* Save button — position:fixed, completely outside panel, always visible on PWA */}
-      <div onClick={e=>e.stopPropagation()} style={{position:"fixed",bottom:0,left:0,right:0,zIndex:201,padding:"10px 16px",paddingBottom:"max(16px,env(safe-area-inset-bottom))",background:"#111",borderTop:"1px solid #222"}}>
-        <button onClick={save} disabled={saving} style={{width:"100%",padding:15,background:saving?"#1a1a1a":`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${saving?"#333":sec.border}`,borderRadius:10,color:saving?"#555":sec.color,fontSize:15,cursor:saving?"not-allowed":"pointer",fontWeight:700}}>
-          {saving ? "Enregistrement..." : "✓ Enregistrer"}
-        </button>
-      </div>
+
     </div>
   );
 }
