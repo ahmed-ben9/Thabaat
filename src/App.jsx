@@ -764,34 +764,7 @@ const RECITERS = [
 ];
 
 // Build URL for everyayah.com reciters
-function buildEveryayahUrl(folder, surahN, verseN) {
-  const s = String(surahN).padStart(3,"0");
-  const v = String(verseN).padStart(3,"0");
-  return `https://everyayah.com/data/${folder}/${s}${v}.mp3`;
-}
 
-// Cache for Quran.com audio URLs {recitationId_surahN: {verseN: url}}
-const audioUrlCache = {};
-
-async function getQuranComAudioUrl(recitationId, surahN, verseN) {
-  const cacheKey = `${recitationId}_${surahN}`;
-  if(!audioUrlCache[cacheKey]) {
-    try {
-      const r = await fetch(`https://api.quran.com/api/v4/recitations/${recitationId}/by_chapter/${surahN}`);
-      if(!r.ok) throw new Error("API error");
-      const d = await r.json();
-      audioUrlCache[cacheKey] = {};
-      (d.audio_files||[]).forEach(a => {
-        // verse_key format: "2:255"
-        const vn = Number(a.verse_key.split(":")[1]);
-        audioUrlCache[cacheKey][vn] = `https://verses.quran.com/${a.url}`;
-      });
-    } catch(e) {
-      return null;
-    }
-  }
-  return audioUrlCache[cacheKey][verseN] || null;
-}
 
 
 // Tajweed CSS injected into document.head for reliable PWA support
@@ -1179,7 +1152,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
               const isPlaying = playingVerse===verseN;
               const isLooping = loopVerse===verseN;
               return (
-                <div key={v.id} onClick={()=>openTafsir(verseN, `${selSurah}:${verseN}`, v.text_uthmani, v._translation)} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10,cursor:"pointer"}}>
+                <div key={v.id} onClick={()=>openTafsir(verseN, selSurah+":"+verseN, v.text_uthmani, v._translation)} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10,cursor:"pointer"}}>
                   <div style={{display:"flex",alignItems:"flex-start",gap:7,direction:"rtl"}}>
                     <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
                       {showTajweed&&v.text_uthmani_tajweed
@@ -1261,7 +1234,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
               {/* Lang selector */}
               <div style={{display:"flex",gap:6}}>
                 {[{v:'ar',l:'Ibn Kathir (عربي)'},{v:'en',l:'Ibn Kathir (English)'}].map(opt=>(
-                  <button key={opt.v} onClick={()=>{setTafsirLang(opt.v);loadTafsir(`${selSurah}:${tafsirVerse.verseN}`,opt.v);}} style={{flex:1,padding:"5px 8px",borderRadius:7,fontSize:10,cursor:"pointer",border:tafsirLang===opt.v?"1px solid #c9a84c44":"1px solid #222",background:tafsirLang===opt.v?"#c9a84c18":"#0d0d0d",color:tafsirLang===opt.v?"#c9a84c":"#555",fontWeight:tafsirLang===opt.v?700:400}}>
+                  <button key={opt.v} onClick={()=>{setTafsirLang(opt.v);loadTafsir(selSurah+':'+tafsirVerse.verseN,opt.v);}} style={{flex:1,padding:"5px 8px",borderRadius:7,fontSize:10,cursor:"pointer",border:tafsirLang===opt.v?"1px solid #c9a84c44":"1px solid #222",background:tafsirLang===opt.v?"#c9a84c18":"#0d0d0d",color:tafsirLang===opt.v?"#c9a84c":"#555",fontWeight:tafsirLang===opt.v?700:400}}>
                     {opt.l}
                   </button>
                 ))}
