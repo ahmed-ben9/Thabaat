@@ -460,68 +460,62 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
   const [saving,setSaving] = useState(false);
   const [saved,setSaved] = useState(false);
   const [celebration,setCelebration] = useState(false);
+  const [ranges,setRanges] = useState(existingRanges);
   const errRate = surahErrorRate(existingSessions);
   const due = mastery ? isDueForReview(mastery, sp.lastReviewed) : false;
-  const vNums = Array.from({length:s.v},(_,i)=>i+1);
 
-  // Preview new pct based on current selections
   const previewRanges = entireMode
     ? [{from:1,to:s.v}]
-    : rangeMode && rangeFrom<=rangeTo
-      ? mergeRanges([...existingRanges,{from:rangeFrom,to:rangeTo}])
-      : existingRanges;
+    : rangeMode && rangeFrom<=rangeTo && rangeFrom>=1 && rangeTo<=s.v
+      ? mergeRanges([...ranges,{from:rangeFrom,to:rangeTo}])
+      : ranges;
   const previewPct = surahLearnedPct(previewRanges, s.v);
+
+  const deleteRange = (idx) => {
+    const newR = ranges.filter((_,i)=>i!==idx);
+    setRanges(newR);
+  };
+
+  const resetAll = async () => {
+    if(!window.confirm("Supprimer toutes les données de "+s.name+" ?")) return;
+    await onSaveHifz(String(surahN), {date:today(),range:{from:1,to:1},verseErrors:{},notes:"Reset"},
+      {learnedRanges:[], mastery:null, lastReviewed:today(), hifzSessions:[]}, null);
+    onClose();
+  };
 
   const save = async () => {
     setSaving(true);
-
-    // Determine new ranges
-    let newRanges;
+    let newRanges = ranges;
     if(entireMode) {
       newRanges = [{from:1, to:s.v}];
-    } else if(rangeMode && rangeFrom<=rangeTo) {
-      newRanges = mergeRanges([...existingRanges, {from:rangeFrom, to:rangeTo}]);
-    } else {
-      // Only mastery changed — keep existing ranges
-      newRanges = existingRanges;
+    } else if(rangeMode && rangeFrom<=rangeTo && rangeFrom>=1 && rangeTo<=s.v) {
+      newRanges = mergeRanges([...ranges, {from:rangeFrom, to:rangeTo}]);
     }
-
     const newPct = surahLearnedPct(newRanges, s.v);
     const willCelebrate = newPct===100 && pct<100;
     const addSession = entireMode || (rangeMode && rangeFrom<=rangeTo);
-
-    // Build session entry (same structure as HifzSession)
     const session = addSession ? {
-      date: today(),
-      type: "solo",
-      partner: null,
-      verseErrors: {},
-      notes: entireMode ? "Sourate entiere (marquage direct)" : `v.${rangeFrom}->v.${rangeTo} (marquage direct)`,
-      range: {from: entireMode?1:rangeFrom, to: entireMode?s.v:rangeTo},
-      duration: 1,
+      date: today(), type:"solo", partner:null, verseErrors:{},
+      notes: entireMode ? "Sourate entiere" : ("v."+rangeFrom+"->"+rangeTo),
+      range: {from:entireMode?1:rangeFrom, to:entireMode?s.v:rangeTo}, duration:1,
     } : null;
-
-    // Build surahData — explicitly set all fields, no spread to avoid stale/undefined
     const surahData = {
       learnedRanges: newRanges,
-      mastery: mastery || null,
+      mastery: mastery||null,
       lastReviewed: today(),
-      hifzSessions: session
-        ? [session, ...existingSessions]
-        : existingSessions,
+      hifzSessions: session ? [session,...existingSessions] : existingSessions,
     };
-
     await onSaveHifz(String(surahN), session||{date:today(),range:{from:1,to:1},verseErrors:{}}, surahData, null);
     setSaving(false);
-    if(willCelebrate) { setCelebration(true); setTimeout(onClose, 2500); }
-    else { setSaved(true); setTimeout(onClose, 800); }
+    if(willCelebrate) { setCelebration(true); setTimeout(onClose,2500); }
+    else { setSaved(true); setTimeout(onClose,900); }
   };
 
   if(celebration) return (
     <div style={{position:"fixed",inset:0,zIndex:300,background:"#000d",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}} onClick={onClose}>
       <div style={{fontSize:60}}>🎉</div>
       <div style={{fontFamily:"'Scheherazade New',serif",fontSize:28,color:"#c9a84c"}}>{s.ar}</div>
-      <div style={{fontSize:16,color:"#ddd",fontWeight:700}}>{s.name} — 100% mémorisée !</div>
+      <div style={{fontSize:16,color:"#ddd",fontWeight:700}}>{s.name} — 100% memorisee !</div>
       <div style={{fontFamily:"'Scheherazade New',serif",fontSize:18,color:"#4ade80"}}>بارك الله فيك</div>
     </div>
   );
@@ -530,140 +524,136 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}}>
       <div style={{background:"#111",borderRadius:"16px 16px 0 0",padding:40,textAlign:"center"}}>
         <div style={{fontSize:44}}>✅</div>
-        <div style={{color:sec.color,fontSize:16,marginTop:12,fontWeight:700}}>Sauvegardé !</div>
-        <div style={{color:"#555",fontSize:12,marginTop:6}}>{s.name} mis à jour — {previewPct}% mémorisé</div>
+        <div style={{color:sec.color,fontSize:16,marginTop:12,fontWeight:700}}>Enregistre !</div>
+        <div style={{color:"#555",fontSize:12,marginTop:6}}>{s.name} — {previewPct}% memorise</div>
       </div>
     </div>
   );
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}} onClick={onClose}>
-      {/* Panel: flex column so button stays at bottom */}
-      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",display:"flex",flexDirection:"column",maxHeight:"85vh"}}>
         {/* Scrollable content */}
-        <div style={{overflowY:"auto",padding:"18px 18px 0 18px",flex:1}}>
-        {/* Header */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-          <div>
-            <div style={{fontSize:17,color:"#ddd",fontWeight:700}}>{s.name}</div>
-            <div style={{fontFamily:"'Scheherazade New',serif",fontSize:22,color:"#c9a84c",marginTop:2}}>{s.ar}</div>
-            <div style={{fontSize:11,color:"#555",marginTop:3}}>Juz {s.juz} · {s.v} versets</div>
-          </div>
-          <button onClick={onClose} style={{background:"transparent",border:"none",color:"#555",fontSize:24,cursor:"pointer",lineHeight:1,padding:"0 4px"}}>×</button>
-        </div>
-
-        {/* Progress bar — shows preview */}
-        <div style={{marginBottom:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5}}>
-            <span style={{color:"#555"}}>Mémorisé</span>
-            <span style={{color:sec.color,fontWeight:700}}>
-              {previewPct!==pct ? <>{pct}% → <span style={{color:"#4ade80"}}>{previewPct}%</span></> : `${pct}%`}
-            </span>
-          </div>
-          <div style={{height:5,background:"#1a1a1a",borderRadius:5,overflow:"hidden"}}>
-            <div style={{height:"100%",width:`${previewPct}%`,background:sec.color,borderRadius:5,transition:"width .4s"}}/>
-          </div>
-          {previewRanges.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:7}}>
-            {previewRanges.map((r,i)=><span key={i} style={{fontSize:10,color:sec.color+"88",background:sec.color+"11",border:`1px solid ${sec.color}22`,borderRadius:20,padding:"2px 8px"}}>v.{r.from}→{r.to}</span>)}
-          </div>}
-        </div>
-
-        {/* Stats */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:14}}>
-          {[{l:"Séances",v:existingSessions.length,c:"#60a5fa"},{l:"Err/séance",v:errRate,c:errRate>2?"#ef4444":"#4ade80"},{l:"À réviser",v:due?"Oui":"Non",c:due?"#ef4444":"#4ade80"}].map(c=>(
-            <div key={c.l} style={{background:"#0d0d0d",border:"1px solid #1a1a1a",borderRadius:8,padding:"9px 5px",textAlign:"center"}}>
-              <div style={{fontSize:15,fontWeight:700,color:c.c,fontFamily:"monospace"}}>{c.v}</div>
-              <div style={{fontSize:10,color:"#444",textTransform:"uppercase",marginTop:2}}>{c.l}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Quick mark options */}
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:11,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:9}}>Marquer comme appris</div>
-
-          {/* Entire surah */}
-          <div onClick={()=>{setEntireMode(!entireMode);setRangeMode(false);}} style={{background:entireMode?sec.dim:"#0d0d0d",border:`1px solid ${entireMode?sec.color:sec.color+"33"}`,borderRadius:10,padding:12,marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:22,height:22,borderRadius:"50%",border:`2px solid ${sec.color}`,background:entireMode?sec.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              {entireMode&&<span style={{color:"#000",fontSize:12,fontWeight:800,lineHeight:1}}>✓</span>}
-            </div>
+        <div style={{overflowY:"auto",padding:"16px 16px 8px",flex:1,WebkitOverflowScrolling:"touch"}}>
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
             <div>
-              <div style={{fontSize:13,color:entireMode?sec.color:"#ccc",fontWeight:600}}>Je connais cette sourate entièrement</div>
-              <div style={{fontSize:11,color:"#555"}}>Du verset 1 au verset {s.v}</div>
+              <div style={{fontSize:16,color:"#ddd",fontWeight:700}}>{s.name}</div>
+              <div style={{fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c"}}>{s.ar}</div>
+              <div style={{fontSize:11,color:"#555",marginTop:2}}>Juz {s.juz} · {s.v} versets</div>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <button onClick={resetAll} style={{padding:"4px 9px",background:"#ef444411",border:"1px solid #ef444433",borderRadius:7,color:"#ef4444",fontSize:10,cursor:"pointer"}}>Reset</button>
+              <button onClick={onClose} style={{background:"transparent",border:"none",color:"#555",fontSize:22,cursor:"pointer",padding:"0 4px"}}>×</button>
             </div>
           </div>
 
-          {/* Specific verse range */}
-          <div onClick={()=>{setRangeMode(!rangeMode);setEntireMode(false);}} style={{background:rangeMode?sec.dim:"#0d0d0d",border:`1px solid ${rangeMode?sec.color:sec.color+"33"}`,borderRadius:10,padding:12,cursor:"pointer",display:"flex",alignItems:"center",gap:10,marginBottom:rangeMode?8:0}}>
-            <div style={{width:22,height:22,borderRadius:"50%",border:`2px solid ${sec.color}`,background:rangeMode?sec.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              {rangeMode&&<span style={{color:"#000",fontSize:12,fontWeight:800,lineHeight:1}}>✓</span>}
+          {/* Progress preview */}
+          <div style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+              <span style={{color:"#555"}}>Memorise</span>
+              <span style={{color:sec.color,fontWeight:700}}>
+                {previewPct!==pct?<>{pct}% → <span style={{color:"#4ade80"}}>{previewPct}%</span></>:`${pct}%`}
+              </span>
             </div>
-            <div>
-              <div style={{fontSize:13,color:rangeMode?sec.color:"#ccc",fontWeight:600}}>Je connais certains versets</div>
-              <div style={{fontSize:11,color:"#555"}}>Ajouter une plage précise</div>
+            <div style={{height:5,background:"#1a1a1a",borderRadius:5,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${previewPct}%`,background:sec.color,borderRadius:5,transition:"width .4s"}}/>
             </div>
           </div>
 
-          {rangeMode&&(
-            <div style={{background:"#0a0a0a",border:`1px solid ${sec.color}22`,borderRadius:9,padding:12,marginTop:0}}>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:"#555",marginBottom:4}}>Du verset</div>
-                  <select value={rangeFrom} onChange={e=>setRangeFrom(Number(e.target.value))} style={{width:"100%",background:"#111",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:14,outline:"none"}}>
-                    {vNums.map(v=><option key={v} value={v}>{v}</option>)}
-                  </select>
+          {/* Existing ranges with delete */}
+          {ranges.length>0&&(
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Plages memorisees</div>
+              {ranges.map((r,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d0d0d",border:`1px solid ${sec.color}22`,borderRadius:7,padding:"6px 10px",marginBottom:5}}>
+                  <span style={{fontSize:12,color:sec.color}}>v.{r.from} → v.{r.to} <span style={{color:"#555",fontSize:10}}>({r.to-r.from+1}v.)</span></span>
+                  <button onClick={()=>deleteRange(i)} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
                 </div>
-                <div style={{color:"#333",marginTop:16,fontSize:16}}>→</div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:10,color:"#555",marginBottom:4}}>Au verset</div>
-                  <select value={rangeTo} onChange={e=>setRangeTo(Number(e.target.value))} style={{width:"100%",background:"#111",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:14,outline:"none"}}>
-                    {vNums.filter(v=>v>=rangeFrom).map(v=><option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mark options */}
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:10,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Marquer comme appris</div>
+            <div onClick={()=>{setEntireMode(!entireMode);setRangeMode(false);}} style={{background:entireMode?sec.dim:"#0d0d0d",border:`1px solid ${entireMode?sec.color:sec.color+"33"}`,borderRadius:9,padding:11,marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${sec.color}`,background:entireMode?sec.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {entireMode&&<span style={{color:"#000",fontSize:11,fontWeight:800}}>✓</span>}
               </div>
-              <div style={{marginTop:8,fontSize:11,color:sec.color+"88",textAlign:"center"}}>{rangeTo-rangeFrom+1} versets · nouveau total : {previewPct}%</div>
+              <div>
+                <div style={{fontSize:13,color:entireMode?sec.color:"#ccc",fontWeight:600}}>Sourate entiere (v.1 → v.{s.v})</div>
+              </div>
+            </div>
+            <div onClick={()=>{setRangeMode(!rangeMode);setEntireMode(false);}} style={{background:rangeMode?sec.dim:"#0d0d0d",border:`1px solid ${rangeMode?sec.color:sec.color+"33"}`,borderRadius:9,padding:11,cursor:"pointer",display:"flex",alignItems:"center",gap:10,marginBottom:rangeMode?7:0}}>
+              <div style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${sec.color}`,background:rangeMode?sec.color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {rangeMode&&<span style={{color:"#000",fontSize:11,fontWeight:800}}>✓</span>}
+              </div>
+              <div style={{fontSize:13,color:rangeMode?sec.color:"#ccc",fontWeight:600}}>Plage de versets</div>
+            </div>
+            {rangeMode&&(
+              <div style={{background:"#0a0a0a",border:`1px solid ${sec.color}22`,borderRadius:8,padding:11}}>
+                <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,color:"#555",marginBottom:4}}>Du verset</div>
+                    <input type="number" min="1" max={s.v} value={rangeFrom}
+                      onChange={e=>setRangeFrom(Math.max(1,Math.min(s.v,Number(e.target.value))))}
+                      style={{width:"100%",background:"#111",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:16,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                  <div style={{color:"#333",marginTop:14,fontSize:16}}>→</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,color:"#555",marginBottom:4}}>Au verset</div>
+                    <input type="number" min={rangeFrom} max={s.v} value={rangeTo}
+                      onChange={e=>setRangeTo(Math.max(rangeFrom,Math.min(s.v,Number(e.target.value))))}
+                      style={{width:"100%",background:"#111",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:16,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                </div>
+                {rangeFrom<=rangeTo&&rangeFrom>=1&&rangeTo<=s.v&&(
+                  <div style={{marginTop:7,fontSize:11,color:sec.color+"88",textAlign:"center"}}>{rangeTo-rangeFrom+1} versets · total apres : {previewPct}%</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Mastery */}
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:7}}>Niveau de maitrise</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:5}}>
+              {Object.entries(MASTERY).map(([k,m])=>(
+                <button key={k} onClick={()=>setMastery(mastery===k?null:k)} style={{padding:"8px 3px",borderRadius:7,fontSize:10,cursor:"pointer",textAlign:"center",border:mastery===k?`1px solid ${m.color}`:"1px solid #222",background:mastery===k?m.color+"22":"#0d0d0d",color:mastery===k?m.color:"#555",fontWeight:mastery===k?700:400}}>
+                  <div>{m.label}</div>
+                  <div style={{fontFamily:"'Scheherazade New',serif",fontSize:11,marginTop:1}}>{m.ar}</div>
+                </button>
+              ))}
+            </div>
+            {mastery&&<div style={{fontSize:10,color:"#555",textAlign:"center",marginTop:5}}>Prochaine revision dans {MASTERY[mastery].days}j</div>}
+          </div>
+
+          {/* Last sessions */}
+          {existingSessions.length>0&&(
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Dernieres seances ({existingSessions.length})</div>
+              {existingSessions.slice(0,3).map((sess,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:"1px solid #1a1a1a"}}>
+                  <span style={{color:"#888"}}>{formatHijri(sess.date)} · v.{sess.range?.from}→{sess.range?.to}</span>
+                  <span style={{color:Object.keys(sess.verseErrors||{}).length>0?"#ef4444":"#4ade80"}}>{Object.keys(sess.verseErrors||{}).length} err.</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Mastery level */}
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:11,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:9}}>Niveau de maîtrise</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:5}}>
-            {Object.entries(MASTERY).map(([k,m])=>(
-              <button key={k} onClick={()=>setMastery(mastery===k?null:k)} style={{padding:"9px 3px",borderRadius:8,fontSize:10,cursor:"pointer",textAlign:"center",border:mastery===k?`1px solid ${m.color}`:"1px solid #222",background:mastery===k?m.color+"22":"#0d0d0d",color:mastery===k?m.color:"#555",fontWeight:mastery===k?700:400}}>
-                <div>{m.label}</div>
-                <div style={{fontFamily:"'Scheherazade New',serif",fontSize:12,marginTop:2}}>{m.ar}</div>
-              </button>
-            ))}
-          </div>
-          {mastery&&<div style={{fontSize:10,color:"#555",textAlign:"center",marginTop:6}}>Prochaine révision dans {MASTERY[mastery].days} jour{MASTERY[mastery].days>1?"s":""}</div>}
-        </div>
-
-        {/* Last sessions */}
-        {existingSessions.length>0&&(
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,color:"#555",textTransform:"uppercase",marginBottom:7}}>Dernières séances</div>
-            {existingSessions.slice(0,3).map((sess,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:"1px solid #1a1a1a"}}>
-                <span style={{color:"#888"}}>{formatHijri(sess.date)} · v.{sess.range?.from}→{sess.range?.to}</span>
-                <span style={{color:Object.keys(sess.verseErrors||{}).length>0?"#ef4444":"#4ade80"}}>{Object.keys(sess.verseErrors||{}).length} err.</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        </div>{/* end scrollable */}
-        {/* Save button — OUTSIDE scroll, always visible */}
-        <div style={{padding:"12px 18px 24px",borderTop:"1px solid #1a1a1a",background:"#111",borderRadius:"0 0 16px 16px"}}>
-          <button onClick={save} disabled={saving} style={{width:"100%",padding:15,background:`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${sec.border}`,borderRadius:10,color:sec.color,fontSize:15,cursor:"pointer",fontWeight:700,opacity:saving?0.7:1}}>
-            {saving ? "Sauvegarde…" : "✓ Enregistrer"}
+        {/* Save button — FIXED outside scroll, always visible */}
+        <div style={{padding:"10px 16px",paddingBottom:"max(10px,env(safe-area-inset-bottom))",borderTop:"1px solid #222",background:"#111",borderRadius:"0 0 16px 16px",flexShrink:0}}>
+          <button onClick={save} disabled={saving} style={{width:"100%",padding:14,background:saving?"#333":`linear-gradient(135deg,${sec.dim},${sec.color}40)`,border:`1px solid ${sec.border}`,borderRadius:10,color:saving?"#666":sec.color,fontSize:15,cursor:saving?"not-allowed":"pointer",fontWeight:700}}>
+            {saving ? "Enregistrement..." : "✓ Enregistrer"}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
 
 // ── QURAN API VIEWER ──────────────────────────────────────────────────────────
 // Tajweed color CSS classes from quran.com
@@ -683,11 +673,16 @@ const TAJWEED_CSS = `
 // This guarantees iOS/Android play works synchronously with user tap
 // Reciters with everyayah.com folder names (reliable CDN, good CORS)
 const RECITERS = [
-  {label:"Mishary Alafasy (Hafs)",    folder:"Alafasy_128kbps"},
-  {label:"Al-Sudais (Hafs)",          folder:"Sudais_128kbps"},
-  {label:"Al-Husary (Hafs)",          folder:"Husary_128kbps"},
-  {label:"Al-Minshawi (Hafs)",        folder:"Minshawi_128kbps"},
-  {label:"Maher Al-Muaiqly (Hafs)",   folder:"MaherAlMuaiqly_128kbps"},
+  // Hafs
+  {label:"Mishary Alafasy (Hafs)",          folder:"Alafasy_128kbps",       warsh:false},
+  {label:"Al-Sudais (Hafs)",                folder:"Sudais_128kbps",         warsh:false},
+  {label:"Al-Husary (Hafs)",                folder:"Husary_128kbps",         warsh:false},
+  {label:"Maher Al-Muaiqly (Hafs)",         folder:"MaherAlMuaiqly_128kbps",warsh:false},
+  {label:"Saad Al-Ghamdi (Hafs)",           folder:"Ghamadi_40kbps",         warsh:false},
+  // Warsh
+  {label:"Khalil Al-Husary (Warsh)",        folder:"Husary_Murattal_Warsh_128kbps", warsh:true},
+  {label:"Al-Minshawi (Warsh)",             folder:"Minshawi_Warsh_128kbps",        warsh:true},
+  {label:"Ibrahim Al-Akhdar (Warsh)",       folder:"IbrahimAlAkhdar_128kbps",       warsh:true},
 ];
 
 // everyayah.com is the most reliable source with CORS support
@@ -698,6 +693,7 @@ function buildAudioUrl(folder, surahN, verseN) {
 }
 
 function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
+  const VERSES_PER_PAGE = 10;
   const [selSurah,setSelSurah] = useState(initialSurah);
   const [verses,setVerses] = useState([]);
   const [loading,setLoading] = useState(false);
@@ -706,137 +702,216 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const [showTajweed,setShowTajweed] = useState(true);
   const [reciterIdx,setReciterIdx] = useState(0);
   const [playingVerse,setPlayingVerse] = useState(null);
+  const [loopVerse,setLoopVerse] = useState(null);      // verse to loop
+  const [loopCount,setLoopCount] = useState(3);          // times to repeat
+  const [loopRemaining,setLoopRemaining] = useState(0);
+  const [continuous,setContinuous] = useState(false);    // auto-play next verse
+  const [audioError,setAudioError] = useState(null);
+  const [page,setPage] = useState(1);
   const audioRef = useRef(null);
+  const pageRef = useRef(page);
+  const continuousRef = useRef(continuous);
+  const loopVerseRef = useRef(loopVerse);
+  const loopRemainingRef = useRef(loopRemaining);
+  const versesRef = useRef(verses);
+  const selSurahRef = useRef(selSurah);
+
+  useEffect(()=>{ pageRef.current=page; }, [page]);
+  useEffect(()=>{ continuousRef.current=continuous; }, [continuous]);
+  useEffect(()=>{ loopVerseRef.current=loopVerse; }, [loopVerse]);
+  useEffect(()=>{ loopRemainingRef.current=loopRemaining; }, [loopRemaining]);
+  useEffect(()=>{ versesRef.current=verses; }, [verses]);
+  useEffect(()=>{ selSurahRef.current=selSurah; }, [selSurah]);
+
+  const totalPages = Math.ceil((verses.length||1)/VERSES_PER_PAGE);
+  const pageVerses = verses.slice((page-1)*VERSES_PER_PAGE, page*VERSES_PER_PAGE);
 
   const loadSurah = useCallback(async(n) => {
-    setLoading(true); setError(null); setVerses([]);
+    setLoading(true); setError(null); setVerses([]); setPage(1);
+    setPlayingVerse(null); setLoopVerse(null); setLoopRemaining(0);
+    if(audioRef.current){audioRef.current.pause();audioRef.current=null;}
     try {
-      // Single call: text + tajweed + French translation (id=31 Hamidullah FR, well-supported)
       const url = `https://api.quran.com/api/v4/verses/by_chapter/${n}?language=fr&words=false&per_page=300&fields=text_uthmani,text_uthmani_tajweed&translations=31`;
       const r = await fetch(url);
       if(!r.ok) throw new Error(`API error ${r.status}`);
       const d = await r.json();
-      const versesArr = (d.verses||[]).map(v => ({
+      const arr = (d.verses||[]).map(v=>({
         ...v,
-        _translation: (v.translations?.[0]?.text||"").replace(/<[^>]*>/g,"").trim()
+        _translation:(v.translations?.[0]?.text||"").replace(/<[^>]*>/g,"").trim()
       }));
-      setVerses(versesArr);
+      setVerses(arr);
     } catch(e) {
-      setError("Impossible de charger. Vérifie ta connexion internet.");
+      setError("Impossible de charger. Verifie ta connexion internet.");
     }
     setLoading(false);
   }, []);
 
-  useEffect(()=>{ loadSurah(selSurah); setPlayingVerse(null); if(audioRef.current){audioRef.current.pause();audioRef.current=null;} }, [selSurah]);
+  useEffect(()=>{ loadSurah(selSurah); }, [selSurah]);
+  useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
 
-  const [audioError,setAudioError] = useState(null);
-
-  const playVerse = (verseN) => {
-    setAudioError(null);
-    // Toggle off if same verse
-    if(playingVerse===verseN) {
-      audioRef.current?.pause();
-      setPlayingVerse(null);
-      return;
-    }
-    // Stop previous
-    if(audioRef.current) { audioRef.current.pause(); audioRef.current=null; }
-    // URL built synchronously at tap time — works on iOS
-    const url = buildAudioUrl(RECITERS[reciterIdx].folder, selSurah, verseN);
+  const playVerseInternal = (verseN, remaining) => {
+    if(audioRef.current){audioRef.current.pause();audioRef.current=null;}
+    const url = buildAudioUrl(RECITERS[reciterIdx].folder, selSurahRef.current, verseN);
     const audio = new Audio(url);
     audio.preload = "auto";
     audioRef.current = audio;
     setPlayingVerse(verseN);
-    const playPromise = audio.play();
-    if(playPromise!==undefined) {
-      playPromise.catch(err=>{
-        console.error("Audio play error:", err, url);
-        setPlayingVerse(null);
-        setAudioError("Lecture impossible — essaie un autre récitateur");
-      });
-    }
-    audio.onended = () => { setPlayingVerse(null); audioRef.current=null; };
-    audio.onerror = () => { setPlayingVerse(null); audioRef.current=null; setAudioError("Fichier audio introuvable pour ce récitateur"); };
+    setLoopRemaining(remaining);
+    const p = audio.play();
+    if(p) p.catch(err=>{
+      setPlayingVerse(null);
+      setAudioError(`Recitateur indisponible: ${RECITERS[reciterIdx].label} — essaie un autre`);
+    });
+    audio.onerror = () => {
+      setPlayingVerse(null);
+      setAudioError(`Fichier introuvable pour ${RECITERS[reciterIdx].label} (dossier: ${RECITERS[reciterIdx].folder})`);
+    };
+    audio.onended = () => {
+      const rem = loopRemainingRef.current - 1;
+      const lv = loopVerseRef.current;
+      if(lv && rem > 0) {
+        // Loop this verse again
+        playVerseInternal(lv, rem);
+      } else {
+        setLoopRemaining(0);
+        setLoopVerse(null);
+        // Continuous: go to next verse
+        if(continuousRef.current) {
+          const allVerses = versesRef.current;
+          const nextN = verseN + 1;
+          if(nextN <= allVerses.length) {
+            // Go to next page if needed
+            const nextPage = Math.ceil(nextN/VERSES_PER_PAGE);
+            if(nextPage !== pageRef.current) setPage(nextPage);
+            setTimeout(()=>playVerseInternal(nextN, 1), 300);
+          } else {
+            // End of surah — go to next surah
+            const nextSurahN = selSurahRef.current + 1;
+            if(nextSurahN <= 114) {
+              setSelSurah(nextSurahN);
+              setTimeout(()=>playVerseInternal(1, 1), 1500);
+            } else {
+              setPlayingVerse(null);
+            }
+          }
+        } else {
+          setPlayingVerse(null);
+          audioRef.current = null;
+        }
+      }
+    };
   };
 
-  // Cleanup on unmount
-  useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
+  const playVerse = (verseN) => {
+    setAudioError(null);
+    if(playingVerse===verseN && !loopVerse) {
+      audioRef.current?.pause();
+      setPlayingVerse(null);
+      return;
+    }
+    setLoopVerse(null);
+    playVerseInternal(verseN, 1);
+  };
+
+  const toggleLoop = (verseN) => {
+    setAudioError(null);
+    if(loopVerse===verseN) {
+      // Stop loop
+      audioRef.current?.pause();
+      setLoopVerse(null);
+      setPlayingVerse(null);
+      setLoopRemaining(0);
+    } else {
+      setLoopVerse(verseN);
+      playVerseInternal(verseN, loopCount);
+    }
+  };
 
   const surah = SURAHS.find(s=>s.n===selSurah);
+  const hafsReciters = RECITERS.filter(r=>!r.warsh);
+  const warshReciters = RECITERS.filter(r=>r.warsh);
+
   return (
     <div style={{position:"fixed",inset:0,zIndex:300,background:"#0a0a0a",display:"flex",flexDirection:"column"}}>
       <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet"/>
       <style>{TAJWEED_CSS}</style>
 
       {/* Top bar */}
-      <div style={{background:"#111",borderBottom:"1px solid #222",padding:"8px 11px",display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
-        <button onClick={onClose} style={{padding:"5px 9px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#888",fontSize:12,cursor:"pointer",flexShrink:0}}>← Fermer</button>
-        <select value={selSurah} onChange={e=>setSelSurah(Number(e.target.value))} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 7px",fontSize:11,outline:"none"}}>
+      <div style={{background:"#111",borderBottom:"1px solid #222",padding:"7px 10px",display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+        <button onClick={onClose} style={{padding:"5px 8px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#888",fontSize:11,cursor:"pointer",flexShrink:0}}>← Fermer</button>
+        <select value={selSurah} onChange={e=>setSelSurah(Number(e.target.value))} style={{flex:1,background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:"#ddd",padding:"5px 6px",fontSize:11,outline:"none"}}>
           {SURAHS.map(s=><option key={s.n} value={s.n}>{s.n}. {s.name} — {s.ar}</option>)}
         </select>
-        <button onClick={()=>onBookmark(selSurah)} style={{padding:"5px 8px",background:bookmark===selSurah?"#c9a84c22":"#1a1a1a",border:`1px solid ${bookmark===selSurah?"#c9a84c44":"#333"}`,borderRadius:7,color:bookmark===selSurah?"#c9a84c":"#888",fontSize:13,cursor:"pointer",flexShrink:0}}>
+        <button onClick={()=>onBookmark(selSurah)} style={{padding:"5px 7px",background:bookmark===selSurah?"#c9a84c22":"#1a1a1a",border:`1px solid ${bookmark===selSurah?"#c9a84c44":"#333"}`,borderRadius:7,color:bookmark===selSurah?"#c9a84c":"#888",fontSize:13,cursor:"pointer",flexShrink:0}}>
           {bookmark===selSurah?"★":"☆"}
         </button>
       </div>
 
       {/* Options bar */}
-      <div style={{background:"#0d0d0d",borderBottom:"1px solid #1a1a1a",padding:"7px 11px",display:"flex",alignItems:"center",gap:7,flexShrink:0,flexWrap:"wrap"}}>
-        {/* Tajweed toggle */}
-        <button onClick={()=>setShowTajweed(!showTajweed)} style={{padding:"4px 10px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTajweed?"1px solid #f59e0b55":"1px solid #333",background:showTajweed?"#f59e0b18":"transparent",color:showTajweed?"#f59e0b":"#555"}}>
-          🎨 Tajweed
-        </button>
-        {/* Translation toggle */}
-        <button onClick={()=>setShowTranslation(!showTranslation)} style={{padding:"4px 10px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTranslation?"1px solid #60a5fa55":"1px solid #333",background:showTranslation?"#60a5fa18":"transparent",color:showTranslation?"#60a5fa":"#555"}}>
-          🇫🇷 Traduction
-        </button>
-        {/* Reciter select */}
-        <select value={reciterIdx} onChange={e=>setReciterIdx(Number(e.target.value))} style={{flex:1,minWidth:0,background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#888",padding:"4px 8px",fontSize:9,outline:"none"}}>
-          {RECITERS.map((r,i)=><option key={i} value={i}>{r.label}</option>)}
+      <div style={{background:"#0d0d0d",borderBottom:"1px solid #1a1a1a",padding:"6px 10px",display:"flex",alignItems:"center",gap:6,flexShrink:0,flexWrap:"wrap"}}>
+        <button onClick={()=>setShowTajweed(!showTajweed)} style={{padding:"3px 9px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTajweed?"1px solid #f59e0b55":"1px solid #333",background:showTajweed?"#f59e0b18":"transparent",color:showTajweed?"#f59e0b":"#555"}}>🎨 Tajweed</button>
+        <button onClick={()=>setShowTranslation(!showTranslation)} style={{padding:"3px 9px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTranslation?"1px solid #60a5fa55":"1px solid #333",background:showTranslation?"#60a5fa18":"transparent",color:showTranslation?"#60a5fa":"#555"}}>🇫🇷 Traduction</button>
+        <button onClick={()=>setContinuous(!continuous)} style={{padding:"3px 9px",borderRadius:20,fontSize:10,cursor:"pointer",border:continuous?"1px solid #4ade8055":"1px solid #333",background:continuous?"#4ade8018":"transparent",color:continuous?"#4ade80":"#555"}}>▶▶ Enchainer</button>
+        {/* Reciter select grouped */}
+        <select value={reciterIdx} onChange={e=>{setReciterIdx(Number(e.target.value));setAudioError(null);}} style={{flex:1,minWidth:0,background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#888",padding:"3px 7px",fontSize:9,outline:"none"}}>
+          <optgroup label="— Hafs —">
+            {hafsReciters.map((r,i)=><option key={i} value={RECITERS.indexOf(r)}>{r.label}</option>)}
+          </optgroup>
+          <optgroup label="— Warsh —">
+            {warshReciters.map((r,i)=><option key={i} value={RECITERS.indexOf(r)}>{r.label}</option>)}
+          </optgroup>
         </select>
-        {/* Resume bookmark */}
-        {bookmark&&bookmark!==selSurah&&<button onClick={()=>setSelSurah(bookmark)} style={{padding:"4px 9px",background:"#c9a84c18",border:"1px solid #c9a84c44",borderRadius:20,color:"#c9a84c",fontSize:9,cursor:"pointer",flexShrink:0}}>↩ {SURAHS.find(s=>s.n===bookmark)?.name}</button>}
+        {/* Loop count */}
+        <select value={loopCount} onChange={e=>setLoopCount(Number(e.target.value))} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:20,color:"#888",padding:"3px 6px",fontSize:9,outline:"none"}}>
+          {[1,2,3,5,10].map(n=><option key={n} value={n}>🔁×{n}</option>)}
+        </select>
+        {bookmark&&bookmark!==selSurah&&<button onClick={()=>setSelSurah(bookmark)} style={{padding:"3px 8px",background:"#c9a84c18",border:"1px solid #c9a84c44",borderRadius:20,color:"#c9a84c",fontSize:9,cursor:"pointer",flexShrink:0}}>↩ {SURAHS.find(s=>s.n===bookmark)?.name}</button>}
       </div>
 
-      {/* Surah name header */}
-      <div style={{textAlign:"center",padding:"12px 14px 9px",borderBottom:"1px solid #1a1a1a",flexShrink:0}}>
-        <div style={{fontFamily:"'Scheherazade New',serif",fontSize:26,color:"#c9a84c"}}>{surah?.ar}</div>
+      {/* Surah header */}
+      <div style={{textAlign:"center",padding:"10px 14px 8px",borderBottom:"1px solid #1a1a1a",flexShrink:0}}>
+        <div style={{fontFamily:"'Scheherazade New',serif",fontSize:24,color:"#c9a84c"}}>{surah?.ar}</div>
         <div style={{fontSize:11,color:"#555",marginTop:2}}>{surah?.name} · {surah?.v} versets · Juz {surah?.juz}</div>
       </div>
 
-      {/* Verses */}
-      <div style={{flex:1,overflowY:"auto",padding:"14px 14px 40px"}}>
-        {loading&&<div style={{textAlign:"center",color:"#444",padding:40}}>Chargement…</div>}
+      {/* Audio error */}
+      {audioError&&<div style={{background:"#ef444411",border:"1px solid #ef444433",borderRadius:0,padding:"7px 12px",fontSize:11,color:"#ef4444",flexShrink:0}}>{audioError}</div>}
+
+      {/* Verse content */}
+      <div style={{flex:1,overflowY:"auto",padding:"12px 12px 8px",WebkitOverflowScrolling:"touch"}}>
+        {loading&&<div style={{textAlign:"center",color:"#444",padding:40}}>Chargement...</div>}
         {error&&<div style={{textAlign:"center",color:"#ef4444",padding:40,fontSize:13}}>{error}</div>}
-        {audioError&&<div style={{background:"#ef444411",border:"1px solid #ef444433",borderRadius:8,padding:"8px 12px",fontSize:11,color:"#ef4444",margin:"0 0 12px 0"}}>{audioError}</div>}
         {!loading&&!error&&(
           <>
-            {selSurah!==9&&<div style={{textAlign:"center",fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#c9a84c",marginBottom:18,direction:"rtl"}}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
-            {verses.map((v,i)=>{
-              const verseN = i+1;
+            {page===1&&selSurah!==9&&<div style={{textAlign:"center",fontFamily:"'Scheherazade New',serif",fontSize:19,color:"#c9a84c",marginBottom:16,direction:"rtl"}}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
+            {pageVerses.map((v,i)=>{
+              const verseN = (page-1)*VERSES_PER_PAGE + i + 1;
               const isPlaying = playingVerse===verseN;
-              // Get translation — try index 0 (first translation returned)
-              const rawTranslation = v._translation || "";
-              const translation = rawTranslation.replace(/<[^>]*>/g,"").trim();
+              const isLooping = loopVerse===verseN;
               return (
-                <div key={v.id} style={{marginBottom:16,borderBottom:"1px solid #1a1a1a",paddingBottom:12}}>
-                  {/* Arabic text + play button */}
-                  <div style={{display:"flex",alignItems:"flex-start",gap:8,direction:"rtl"}}>
-                    <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:24,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
-                      {showTajweed && v.text_uthmani_tajweed
-                        ? <span dangerouslySetInnerHTML={{__html: v.text_uthmani_tajweed}}/>
-                        : v.text_uthmani
-                      }
-                      <span style={{color:"#c9a84c77",fontSize:17,marginRight:8}}>﴿{verseN}﴾</span>
+                <div key={v.id} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:7,direction:"rtl"}}>
+                    <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
+                      {showTajweed&&v.text_uthmani_tajweed
+                        ?<span dangerouslySetInnerHTML={{__html:v.text_uthmani_tajweed}}/>
+                        :v.text_uthmani}
+                      <span style={{color:"#c9a84c77",fontSize:16,marginRight:7}}>﴿{verseN}﴾</span>
                     </div>
-                    {/* Play button — direction ltr so it doesn't flip on RTL */}
-                    <button onClick={()=>playVerse(verseN)} style={{flexShrink:0,direction:"ltr",width:34,height:34,borderRadius:"50%",background:isPlaying?"#60a5fa22":"#1a1a1a",border:`1.5px solid ${isPlaying?"#60a5fa":"#333"}`,color:isPlaying?"#60a5fa":"#666",fontSize:14,cursor:"pointer",marginTop:8,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
-                      {isPlaying?"⏸":"▶"}
-                    </button>
+                    <div style={{flexShrink:0,direction:"ltr",display:"flex",flexDirection:"column",gap:4,marginTop:6}}>
+                      {/* Play button */}
+                      <button onClick={()=>playVerse(verseN)} style={{width:32,height:32,borderRadius:"50%",background:isPlaying&&!isLooping?"#60a5fa22":"#1a1a1a",border:`1.5px solid ${isPlaying&&!isLooping?"#60a5fa":"#333"}`,color:isPlaying&&!isLooping?"#60a5fa":"#666",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {isPlaying&&!isLooping?"⏸":"▶"}
+                      </button>
+                      {/* Loop button */}
+                      <button onClick={()=>toggleLoop(verseN)} style={{width:32,height:32,borderRadius:"50%",background:isLooping?"#f59e0b22":"#1a1a1a",border:`1.5px solid ${isLooping?"#f59e0b":"#333"}`,color:isLooping?"#f59e0b":"#666",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+                        🔁
+                        {isLooping&&loopRemaining>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#f59e0b",color:"#000",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>{loopRemaining}</span>}
+                      </button>
+                    </div>
                   </div>
-                  {/* French translation */}
                   {showTranslation&&(
-                    <div style={{fontSize:12,color:translation?"#999":"#444",lineHeight:1.8,marginTop:8,direction:"ltr",fontStyle:"italic",borderLeft:`2px solid #60a5fa${translation?"44":"22"}`,paddingLeft:10}}>
-                      {translation || "Traduction non disponible pour ce verset"}
+                    <div style={{fontSize:12,color:v._translation?"#999":"#444",lineHeight:1.8,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
+                      {v._translation||"Traduction non disponible"}
                     </div>
                   )}
                 </div>
@@ -845,9 +920,25 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
           </>
         )}
       </div>
+
+      {/* Pagination */}
+      {!loading&&!error&&totalPages>1&&(
+        <div style={{background:"#111",borderTop:"1px solid #1a1a1a",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+          <button onClick={()=>setPage(Math.max(1,page-1))} disabled={page===1} style={{padding:"5px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:page===1?"#333":"#888",fontSize:12,cursor:page===1?"not-allowed":"pointer"}}>← Préc</button>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,color:"#555"}}>Page</span>
+            <select value={page} onChange={e=>setPage(Number(e.target.value))} style={{background:"#1a1a1a",border:"1px solid #333",borderRadius:6,color:"#ddd",padding:"3px 6px",fontSize:12,outline:"none"}}>
+              {Array.from({length:totalPages},(_,i)=>i+1).map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+            <span style={{fontSize:11,color:"#555"}}>/ {totalPages}</span>
+          </div>
+          <button onClick={()=>setPage(Math.min(totalPages,page+1))} disabled={page===totalPages} style={{padding:"5px 12px",background:"#1a1a1a",border:"1px solid #333",borderRadius:7,color:page===totalPages?"#333":"#888",fontSize:12,cursor:page===totalPages?"not-allowed":"pointer"}}>Suiv →</button>
+        </div>
+      )}
     </div>
   );
 }
+
 
 // ── HIFZ DASHBOARD ────────────────────────────────────────────────────────────
 function HifzDashboard({state, onNewSession}) {
