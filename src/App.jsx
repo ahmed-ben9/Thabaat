@@ -656,43 +656,62 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
 // ── QURAN API VIEWER ──────────────────────────────────────────────────────────
 // Tajweed color CSS classes from quran.com
 // Tajweed CSS injected into document.head for reliable PWA support
-// Colors based on official quran.com tajweed color system, adapted for dark background
+// Colors matching quran.com official tajweed color system (verified from screenshot)
 const TAJWEED_CSS_TEXT = `
-  /* Silent / Wasl */
+  /* Silent / Hamza Wasl */
   .ham_wasl { color: #AAAAAA !important; }
   .slnt     { color: #AAAAAA !important; }
   .silent   { color: #AAAAAA !important; }
 
-  /* Madd (prolongation) — shades of blue/cyan */
-  .madda_normal      { color: #B0C4FF !important; } /* Normal madd 2 — light blue */
-  .madda_permissible { color: #FFB347 !important; } /* Permissible madd — orange */
-  .madda_necessary   { color: #FF4444 !important; } /* Necessary madd 6 — red */
-  .madda_obligatory  { color: #FF6B6B !important; } /* Obligatory madd 4/5 — light red */
+  /* Madd - Normal (2 vowels) — yellow/gold */
+  .madda_normal      { color: #F5C518 !important; }
 
-  /* Qalqala (echo) — red/pink */
-  .qalaqah { color: #FF3333 !important; }
+  /* Madd - Permissible/Separated (2/4/6 vowels) — orange */
+  .madda_permissible { color: #F97316 !important; }
 
-  /* Ikhfa / Idgham shafawi — pink/magenta */
-  .ikhafa_shafawi  { color: #FF69B4 !important; }
-  .idgham_shafawi  { color: #FF69B4 !important; }
+  /* Madd - Obligatory/Connected (4/5 vowels) — red */
+  .madda_obligatory  { color: #DC2626 !important; }
 
-  /* Ikhfa — purple */
-  .ikhafa { color: #CC44FF !important; }
+  /* Madd - Necessary (6 vowels) — dark red */
+  .madda_necessary   { color: #EF4444 !important; }
 
-  /* Idgham (merging) — green */
-  .idgham_ghunnah          { color: #4CAF50 !important; }
-  .idgham_wo_ghunnah       { color: #4CAF50 !important; }
-  .idgham_mutajanisain     { color: #4CAF50 !important; }
-  .idgham_mutaqaribain     { color: #4CAF50 !important; }
-  .idgham_with_ghunnah     { color: #4CAF50 !important; }
-  .idgham_without_ghunnah  { color: #4CAF50 !important; }
+  /* Qalqala (echo) — light blue */
+  .qalaqah { color: #60A5FA !important; }
+  .qlq      { color: #60A5FA !important; }
 
-  /* Ghunna (nasalization) — orange */
-  .ghunnah { color: #FF9500 !important; }
+  /* Tafkhim (heavy/emphasis) — dark blue */
+  .laam_shamsiyah { color: #3B82F6 !important; }
 
-  /* Laam shamsiyah — gold */
-  .laam_shamsiyah { color: #FFD700 !important; }
+  /* Ghunna (nasalization) — green */
+  .ghunnah { color: #22C55E !important; }
+
+  /* Ikhfa (concealment) — green */
+  .ikhafa          { color: #22C55E !important; }
+  .ikhf            { color: #22C55E !important; }
+
+  /* Ikhfa Shafawi (with meem) — green */
+  .ikhafa_shafawi  { color: #16A34A !important; }
+  .ikhf_shfw       { color: #16A34A !important; }
+
+  /* Idgham with ghunna — green */
+  .idgham_ghunnah         { color: #22C55E !important; }
+  .idgh_ghn               { color: #22C55E !important; }
+  .idgham_with_ghunnah    { color: #22C55E !important; }
+  .idgham_mutajanisain    { color: #22C55E !important; }
+  .idgham_mutaqaribain    { color: #22C55E !important; }
+
+  /* Idgham without ghunna — lighter green */
+  .idgham_wo_ghunnah      { color: #4ADE80 !important; }
+  .idgham_without_ghunnah { color: #4ADE80 !important; }
+
+  /* Idgham Shafawi (with meem) — green */
+  .idgham_shafawi  { color: #16A34A !important; }
+  .idghm_shfw      { color: #16A34A !important; }
+
+  /* Iqlab — purple/pink */
+  .iqlb { color: #A855F7 !important; }
 `;
+
 
 // Inject CSS into document.head — works reliably in PWA mode
 function injectTajweedCSS() {
@@ -752,6 +771,194 @@ async function getQuranComAudioUrl(recitationId, surahN, verseN) {
   return audioUrlCache[cacheKey][verseN] || null;
 }
 
+// Complete tajweed rules reference
+const TAJWEED_RULES_MAP = {
+  ham_wasl: {
+    name: "Hamzat ul-Wasl",
+    ar: "همزة الوصل",
+    color: "#AAAAAA",
+    desc: "Lettre de liaison — se prononce uniquement en début de récitation, sinon silencieuse.",
+    letters: "ا",
+    rule: "Wasl",
+  },
+  slnt: {
+    name: "Lettre silencieuse",
+    ar: "حرف صامت",
+    color: "#AAAAAA",
+    desc: "Lettre écrite mais non prononcée dans la récitation.",
+    letters: "",
+    rule: "Silent",
+  },
+  madda_normal: {
+    name: "Madd Normal",
+    ar: "مد طبيعي",
+    color: "#F5C518",
+    desc: "Prolongation naturelle de 2 temps (harakat). Présente sur les lettres de madd (ا و ي) suivies d'une voyelle.",
+    letters: "ا و ي",
+    rule: "Madd 2",
+  },
+  madda_permissible: {
+    name: "Madd Permissible",
+    ar: "مد جائز منفصل",
+    color: "#F97316",
+    desc: "Madd séparé — la lettre de madd est dans un mot et la hamza dans le suivant. Prolongation 2, 4 ou 6 temps selon le récitateur.",
+    letters: "ا و ي + ء",
+    rule: "Madd 2/4/6",
+  },
+  madda_obligatory: {
+    name: "Madd Obligatoire",
+    ar: "مد واجب متصل",
+    color: "#DC2626",
+    desc: "Madd connecté — la lettre de madd et la hamza sont dans le même mot. Prolongation obligatoire de 4 ou 5 temps.",
+    letters: "ا و ي + ء (même mot)",
+    rule: "Madd 4/5",
+  },
+  madda_necessary: {
+    name: "Madd Nécessaire",
+    ar: "مد لازم",
+    color: "#EF4444",
+    desc: "Madd nécessaire — lettre de madd suivie d'une sukun fixe. Prolongation obligatoire de 6 temps.",
+    letters: "ا و ي + سكون",
+    rule: "Madd 6",
+  },
+  qalaqah: {
+    name: "Qalqala",
+    ar: "قلقلة",
+    color: "#60A5FA",
+    desc: "Rebond sonore produit sur 5 lettres spécifiques quand elles portent un sukun. Le son rebondit légèrement.",
+    letters: "ق ط ب ج د",
+    rule: "Qalqala",
+  },
+  qlq: {
+    name: "Qalqala",
+    ar: "قلقلة",
+    color: "#60A5FA",
+    desc: "Rebond sonore produit sur 5 lettres spécifiques quand elles portent un sukun.",
+    letters: "ق ط ب ج د",
+    rule: "Qalqala",
+  },
+  ghunnah: {
+    name: "Ghunna",
+    ar: "غنة",
+    color: "#22C55E",
+    desc: "Son nasal de 2 temps produit par le nez. Présent sur le Noun et le Meem mushadda.",
+    letters: "ن م (مشددة)",
+    rule: "Ghunna",
+  },
+  ikhafa: {
+    name: "Ikhfa",
+    ar: "إخفاء",
+    color: "#22C55E",
+    desc: "Occultation — le Noun sâkin ou Tanwin est prononcé entre l'izhar et l'idgham, avec ghunna de 2 temps.",
+    letters: "ت ث ج د ذ ز س ش ص ض ط ظ ف ق ك",
+    rule: "Ikhfa",
+  },
+  ikhf: {
+    name: "Ikhfa",
+    ar: "إخفاء",
+    color: "#22C55E",
+    desc: "Occultation — le Noun sâkin ou Tanwin est prononcé avec ghunna de 2 temps.",
+    letters: "ت ث ج د ذ ز س ش ص ض ط ظ ف ق ك",
+    rule: "Ikhfa",
+  },
+  ikhafa_shafawi: {
+    name: "Ikhfa Shafawi",
+    ar: "إخفاء شفوي",
+    color: "#16A34A",
+    desc: "Ikhfa labial — le Meem sâkin est occulté devant le Ba, avec ghunna de 2 temps.",
+    letters: "م + ب",
+    rule: "Ikhfa Shafawi",
+  },
+  ikhf_shfw: {
+    name: "Ikhfa Shafawi",
+    ar: "إخفاء شفوي",
+    color: "#16A34A",
+    desc: "Ikhfa labial — le Meem sâkin est occulté devant le Ba, avec ghunna.",
+    letters: "م + ب",
+    rule: "Ikhfa Shafawi",
+  },
+  idgham_ghunnah: {
+    name: "Idgham avec Ghunna",
+    ar: "إدغام بغنة",
+    color: "#22C55E",
+    desc: "Fusion avec nasalisation — le Noun sâkin ou Tanwin est fusionné avec la lettre suivante, avec ghunna de 2 temps.",
+    letters: "ي ن م و",
+    rule: "Idgham",
+  },
+  idgham_wo_ghunnah: {
+    name: "Idgham sans Ghunna",
+    ar: "إدغام بلا غنة",
+    color: "#4ADE80",
+    desc: "Fusion sans nasalisation — le Noun sâkin ou Tanwin est fusionné avec la lettre suivante, sans ghunna.",
+    letters: "ل ر",
+    rule: "Idgham",
+  },
+  idgham_with_ghunnah: {
+    name: "Idgham avec Ghunna",
+    ar: "إدغام بغنة",
+    color: "#22C55E",
+    desc: "Fusion avec nasalisation de 2 temps.",
+    letters: "ي ن م و",
+    rule: "Idgham",
+  },
+  idgham_without_ghunnah: {
+    name: "Idgham sans Ghunna",
+    ar: "إدغام بلا غنة",
+    color: "#4ADE80",
+    desc: "Fusion sans nasalisation.",
+    letters: "ل ر",
+    rule: "Idgham",
+  },
+  idgham_shafawi: {
+    name: "Idgham Shafawi",
+    ar: "إدغام شفوي",
+    color: "#16A34A",
+    desc: "Fusion labiale — le Meem sâkin est fusionné avec un autre Meem, avec ghunna de 2 temps.",
+    letters: "م + م",
+    rule: "Idgham Shafawi",
+  },
+  idghm_shfw: {
+    name: "Idgham Shafawi",
+    ar: "إدغام شفوي",
+    color: "#16A34A",
+    desc: "Fusion labiale — Meem sâkin + Meem, avec ghunna.",
+    letters: "م + م",
+    rule: "Idgham Shafawi",
+  },
+  idgham_mutajanisain: {
+    name: "Idgham Mutajanisayn",
+    ar: "إدغام المتجانسين",
+    color: "#22C55E",
+    desc: "Fusion de deux lettres du même point d'articulation.",
+    letters: "ت د ط / ث ذ ظ / م ب",
+    rule: "Idgham",
+  },
+  idgham_mutaqaribain: {
+    name: "Idgham Mutaqaribuyn",
+    ar: "إدغام المتقاربين",
+    color: "#22C55E",
+    desc: "Fusion de deux lettres aux points d'articulation proches.",
+    letters: "ق + ك / ل + ر",
+    rule: "Idgham",
+  },
+  iqlb: {
+    name: "Iqlab",
+    ar: "إقلاب",
+    color: "#A855F7",
+    desc: "Transformation — le Noun sâkin ou Tanwin se transforme en Meem devant le Ba, avec ghunna de 2 temps.",
+    letters: "ن / تنوين + ب",
+    rule: "Iqlab",
+  },
+  laam_shamsiyah: {
+    name: "Laam Shamsiyya",
+    ar: "لام شمسية",
+    color: "#3B82F6",
+    desc: "Laam solaire — le 'Al' de définition, la laam est assimilée à la lettre suivante (lettre solaire).",
+    letters: "ت ث د ذ ر ز س ش ص ض ط ظ ل ن",
+    rule: "Laam",
+  },
+};
+
 function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const VERSES_PER_PAGE = 10;
   const [selSurah,setSelSurah] = useState(initialSurah);
@@ -768,6 +975,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const [continuous,setContinuous] = useState(false);    // auto-play next verse
   const [audioError,setAudioError] = useState(null);
   const [page,setPage] = useState(1);
+  const [tajweedInfo,setTajweedInfo] = useState(null); // {rule, x, y}
   const audioRef = useRef(null);
   const pageRef = useRef(page);
   const continuousRef = useRef(continuous);
@@ -810,6 +1018,30 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   useEffect(()=>{ injectTajweedCSS(); }, []);
   useEffect(()=>{ loadSurah(selSurah); }, [selSurah]);
   useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
+
+  // Handle tap on tajweed letter — show rule popup
+  const handleTajweedClick = (e) => {
+    // Walk up DOM to find tajweed-classed element
+    let el = e.target;
+    let found = null;
+    for(let i=0; i<4; i++) {
+      if(!el) break;
+      const cls = el.className || "";
+      // Check all known tajweed classes
+      const keys = Object.keys(TAJWEED_RULES_MAP);
+      const match = keys.find(k => {
+        const classes = cls.split ? cls.split(/\s+/) : [];
+        return classes.includes(k);
+      });
+      if(match) { found = match; break; }
+      el = el.parentElement;
+    }
+    if(found && TAJWEED_RULES_MAP[found]) {
+      setTajweedInfo(TAJWEED_RULES_MAP[found]);
+    } else {
+      setTajweedInfo(null);
+    }
+  };
 
   const playVerseInternal = async (verseN, remaining) => {
     if(audioRef.current){audioRef.current.pause();audioRef.current=null;}
@@ -967,7 +1199,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
                   <div style={{display:"flex",alignItems:"flex-start",gap:7,direction:"rtl"}}>
                     <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
                       {showTajweed&&v.text_uthmani_tajweed
-                        ?<span dangerouslySetInnerHTML={{__html:v.text_uthmani_tajweed}}/>
+                        ?<span dangerouslySetInnerHTML={{__html:v.text_uthmani_tajweed}} onClick={handleTajweedClick} style={{cursor:"pointer"}}/>
                         :v.text_uthmani}
                       <span style={{color:"#c9a84c77",fontSize:16,marginRight:7}}>﴿{verseN}﴾</span>
                     </div>
@@ -994,6 +1226,31 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
           </>
         )}
       </div>
+
+      {/* Tajweed rule popup */}
+      {tajweedInfo&&(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:400,padding:"14px 16px",paddingBottom:"max(16px,env(safe-area-inset-bottom))",background:"#0f0f0f",borderTop:`3px solid ${tajweedInfo.color}`,boxShadow:"0 -4px 24px #000a"}} onClick={()=>setTajweedInfo(null)}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                <div style={{width:12,height:12,borderRadius:"50%",background:tajweedInfo.color,flexShrink:0}}/>
+                <span style={{fontSize:14,fontWeight:700,color:tajweedInfo.color}}>{tajweedInfo.name}</span>
+                <span style={{fontSize:10,color:"#555",background:"#1a1a1a",borderRadius:20,padding:"2px 8px"}}>{tajweedInfo.rule}</span>
+              </div>
+              <div style={{fontFamily:"'Scheherazade New',serif",fontSize:18,color:tajweedInfo.color,marginBottom:6,direction:"rtl",textAlign:"right"}}>{tajweedInfo.ar}</div>
+              <div style={{fontSize:12,color:"#aaa",lineHeight:1.7,marginBottom:tajweedInfo.letters?8:0}}>{tajweedInfo.desc}</div>
+              {tajweedInfo.letters&&(
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:10,color:"#555"}}>Lettres :</span>
+                  <span style={{fontFamily:"'Scheherazade New',serif",fontSize:16,color:tajweedInfo.color,direction:"rtl"}}>{tajweedInfo.letters}</span>
+                </div>
+              )}
+            </div>
+            <button onClick={()=>setTajweedInfo(null)} style={{background:"transparent",border:"none",color:"#555",fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>
+          </div>
+          <div style={{fontSize:9,color:"#333",textAlign:"center"}}>Appuie ailleurs pour fermer</div>
+        </div>
+      )}
 
       {/* Pagination */}
       {!loading&&!error&&totalPages>1&&(
