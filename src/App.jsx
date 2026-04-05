@@ -975,7 +975,12 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   const [continuous,setContinuous] = useState(false);    // auto-play next verse
   const [audioError,setAudioError] = useState(null);
   const [page,setPage] = useState(1);
-  const [tajweedInfo,setTajweedInfo] = useState(null); // {rule, x, y}
+  const [showTajweedLegend,setShowTajweedLegend] = useState(false);
+  const [tafsirVerse,setTafsirVerse] = useState(null); // {verseN, verseKey, text_ar, translation}
+  const [tafsirLang,setTafsirLang] = useState('ar');   // 'ar' or 'en'
+  const [tafsirText,setTafsirText] = useState(null);
+  const [tafsirLoading,setTafsirLoading] = useState(false);
+  const tafsirCache = useRef({});
   const audioRef = useRef(null);
   const pageRef = useRef(page);
   const continuousRef = useRef(continuous);
@@ -1019,28 +1024,34 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
   useEffect(()=>{ loadSurah(selSurah); }, [selSurah]);
   useEffect(()=>()=>{ audioRef.current?.pause(); }, []);
 
-  // Handle tap on tajweed letter — show rule popup
-  const handleTajweedClick = (e) => {
-    // Walk up DOM to find tajweed-classed element
-    let el = e.target;
-    let found = null;
-    for(let i=0; i<4; i++) {
-      if(!el) break;
-      const cls = el.className || "";
-      // Check all known tajweed classes
-      const keys = Object.keys(TAJWEED_RULES_MAP);
-      const match = keys.find(k => {
-        const classes = cls.split ? cls.split(/\s+/) : [];
-        return classes.includes(k);
-      });
-      if(match) { found = match; break; }
-      el = el.parentElement;
+  // Load tafsir for a verse from Quran.com API
+  const loadTafsir = async (verseKey, lang) => {
+    const cacheKey = `${verseKey}_${lang}`;
+    if(tafsirCache.current[cacheKey]) {
+      setTafsirText(tafsirCache.current[cacheKey]);
+      return;
     }
-    if(found && TAJWEED_RULES_MAP[found]) {
-      setTajweedInfo(TAJWEED_RULES_MAP[found]);
-    } else {
-      setTajweedInfo(null);
+    setTafsirLoading(true);
+    setTafsirText(null);
+    try {
+      const tafsirId = lang === 'ar' ? 14 : 169;
+      const url = `https://api.quran.com/api/v4/tafsirs/${tafsirId}/by_ayah/${verseKey}`;
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('API error');
+      const d = await r.json();
+      const text = (d.tafsir?.text || '').replace(/<[^>]*>/g, '').trim();
+      tafsirCache.current[cacheKey] = text || 'Tafsir non disponible.';
+      setTafsirText(tafsirCache.current[cacheKey]);
+    } catch(e) {
+      setTafsirText('Impossible de charger le tafsir. Verifie ta connexion.');
     }
+    setTafsirLoading(false);
+  };
+
+  const openTafsir = (verseN, verseKey, text_uthmani, translation) => {
+    setTafsirVerse({verseN, verseKey, text_uthmani, translation});
+    setTafsirText(null);
+    loadTafsir(verseKey, tafsirLang);
   };
 
   const playVerseInternal = async (verseN, remaining) => {
@@ -1156,6 +1167,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
       {/* Options bar */}
       <div style={{background:"#0d0d0d",borderBottom:"1px solid #1a1a1a",padding:"6px 10px",display:"flex",alignItems:"center",gap:6,flexShrink:0,flexWrap:"wrap"}}>
         <button onClick={()=>setShowTajweed(!showTajweed)} style={{padding:"3px 9px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTajweed?"1px solid #f59e0b55":"1px solid #333",background:showTajweed?"#f59e0b18":"transparent",color:showTajweed?"#f59e0b":"#555"}}>🎨 Tajweed</button>
+        {showTajweed&&<button onClick={()=>setShowTajweedLegend(!showTajweedLegend)} style={{padding:"3px 8px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTajweedLegend?"1px solid #f59e0b55":"1px solid #333",background:showTajweedLegend?"#f59e0b18":"transparent",color:showTajweedLegend?"#f59e0b":"#555"}}>ℹ️</button>}
         <button onClick={()=>setShowTranslation(!showTranslation)} style={{padding:"3px 9px",borderRadius:20,fontSize:10,cursor:"pointer",border:showTranslation?"1px solid #60a5fa55":"1px solid #333",background:showTranslation?"#60a5fa18":"transparent",color:showTranslation?"#60a5fa":"#555"}}>🇫🇷 Traduction</button>
         <button onClick={()=>setContinuous(!continuous)} style={{padding:"3px 9px",borderRadius:20,fontSize:10,cursor:"pointer",border:continuous?"1px solid #4ade8055":"1px solid #333",background:continuous?"#4ade8018":"transparent",color:continuous?"#4ade80":"#555"}}>▶▶ Enchainer</button>
         {/* Reciter select grouped */}
@@ -1199,7 +1211,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
                   <div style={{display:"flex",alignItems:"flex-start",gap:7,direction:"rtl"}}>
                     <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
                       {showTajweed&&v.text_uthmani_tajweed
-                        ?<span dangerouslySetInnerHTML={{__html:v.text_uthmani_tajweed}} onClick={handleTajweedClick} style={{cursor:"pointer"}}/>
+                        ?<span dangerouslySetInnerHTML={{__html:v.text_uthmani_tajweed}}/>
                         :v.text_uthmani}
                       <span style={{color:"#c9a84c77",fontSize:16,marginRight:7}}>﴿{verseN}﴾</span>
                     </div>
@@ -1212,6 +1224,10 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
                       <button onClick={()=>toggleLoop(verseN)} style={{width:32,height:32,borderRadius:"50%",background:isLooping?"#f59e0b22":"#1a1a1a",border:`1.5px solid ${isLooping?"#f59e0b":"#333"}`,color:isLooping?"#f59e0b":"#666",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
                         🔁
                         {isLooping&&loopRemaining>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#f59e0b",color:"#000",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>{loopRemaining}</span>}
+                      </button>
+                      {/* Tafsir button */}
+                      <button onClick={()=>openTafsir(verseN, `${selSurah}:${verseN}`, v.text_uthmani, v._translation)} style={{width:32,height:32,borderRadius:"50%",background:tafsirVerse?.verseN===verseN?"#c9a84c22":"#1a1a1a",border:`1.5px solid ${tafsirVerse?.verseN===verseN?"#c9a84c":"#333"}`,color:tafsirVerse?.verseN===verseN?"#c9a84c":"#666",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        📖
                       </button>
                     </div>
                   </div>
@@ -1227,28 +1243,76 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
         )}
       </div>
 
-      {/* Tajweed rule popup */}
-      {tajweedInfo&&(
-        <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:400,padding:"14px 16px",paddingBottom:"max(16px,env(safe-area-inset-bottom))",background:"#0f0f0f",borderTop:`3px solid ${tajweedInfo.color}`,boxShadow:"0 -4px 24px #000a"}} onClick={()=>setTajweedInfo(null)}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <div style={{width:12,height:12,borderRadius:"50%",background:tajweedInfo.color,flexShrink:0}}/>
-                <span style={{fontSize:14,fontWeight:700,color:tajweedInfo.color}}>{tajweedInfo.name}</span>
-                <span style={{fontSize:10,color:"#555",background:"#1a1a1a",borderRadius:20,padding:"2px 8px"}}>{tajweedInfo.rule}</span>
+
+      {/* Tajweed Legend Modal */}
+      {showTajweedLegend&&(
+        <div style={{position:"fixed",inset:0,zIndex:400,background:"#000c",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick={()=>setShowTajweedLegend(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",maxHeight:"75vh",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"14px 16px 10px",borderBottom:"1px solid #1a1a1a",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#f59e0b"}}>🎨 Légende Tajweed</div>
+              <button onClick={()=>setShowTajweedLegend(false)} style={{background:"transparent",border:"none",color:"#555",fontSize:22,cursor:"pointer"}}>×</button>
+            </div>
+            <div style={{overflowY:"auto",padding:"10px 16px 20px"}}>
+              {[
+                {color:"#AAAAAA", name:"Lettre silencieuse / Wasl", ar:"حرف صامت / همزة الوصل", desc:"Lettre non prononcée ou de liaison"},
+                {color:"#F5C518", name:"Madd Normal (2 temps)", ar:"مد طبيعي", desc:"Prolongation naturelle de 2 temps"},
+                {color:"#F97316", name:"Madd Permissible (2/4/6)", ar:"مد جائز منفصل", desc:"Madd séparé entre deux mots"},
+                {color:"#DC2626", name:"Madd Obligatoire (4/5)", ar:"مد واجب متصل", desc:"Madd dans le même mot avec hamza"},
+                {color:"#EF4444", name:"Madd Nécessaire (6)", ar:"مد لازم", desc:"Madd suivi d'un sukun fixe — 6 temps"},
+                {color:"#60A5FA", name:"Qalqala", ar:"قلقلة", desc:"Rebond sonore sur ق ط ب ج د"},
+                {color:"#22C55E", name:"Ghunna / Ikhfa / Idgham", ar:"غنة / إخفاء / إدغام", desc:"Son nasal de 2 temps"},
+                {color:"#16A34A", name:"Ikhfa & Idgham Shafawi", ar:"إخفاء / إدغام شفوي", desc:"Avec le Meem"},
+                {color:"#A855F7", name:"Iqlab", ar:"إقلاب", desc:"Noun → Meem devant Ba"},
+                {color:"#3B82F6", name:"Laam Shamsiyya", ar:"لام شمسية", desc:"Laam assimilée à la lettre solaire"},
+              ].map((r,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 0",borderBottom:"1px solid #1a1a1a"}}>
+                  <div style={{width:14,height:14,borderRadius:"50%",background:r.color,flexShrink:0,marginTop:3}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600,color:r.color,marginBottom:2}}>{r.name}</div>
+                    <div style={{fontFamily:"'Scheherazade New',serif",fontSize:14,color:r.color+"99",marginBottom:3,direction:"rtl",textAlign:"right"}}>{r.ar}</div>
+                    <div style={{fontSize:11,color:"#888"}}>{r.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tafsir Panel */}
+      {tafsirVerse&&(
+        <div style={{position:"fixed",inset:0,zIndex:400,background:"#000c",display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick={()=>setTafsirVerse(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+            {/* Tafsir header */}
+            <div style={{padding:"12px 16px 10px",borderBottom:"1px solid #1a1a1a",flexShrink:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#c9a84c"}}>📖 Tafsir — {SURAHS.find(s=>s.n===selSurah)?.name} : {tafsirVerse.verseN}</div>
+                <button onClick={()=>setTafsirVerse(null)} style={{background:"transparent",border:"none",color:"#555",fontSize:22,cursor:"pointer"}}>×</button>
               </div>
-              <div style={{fontFamily:"'Scheherazade New',serif",fontSize:18,color:tajweedInfo.color,marginBottom:6,direction:"rtl",textAlign:"right"}}>{tajweedInfo.ar}</div>
-              <div style={{fontSize:12,color:"#aaa",lineHeight:1.7,marginBottom:tajweedInfo.letters?8:0}}>{tajweedInfo.desc}</div>
-              {tajweedInfo.letters&&(
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontSize:10,color:"#555"}}>Lettres :</span>
-                  <span style={{fontFamily:"'Scheherazade New',serif",fontSize:16,color:tajweedInfo.color,direction:"rtl"}}>{tajweedInfo.letters}</span>
+              {/* Lang selector */}
+              <div style={{display:"flex",gap:6}}>
+                {[{v:'ar',l:'Ibn Kathir (عربي)'},{v:'en',l:'Ibn Kathir (English)'}].map(opt=>(
+                  <button key={opt.v} onClick={()=>{setTafsirLang(opt.v);loadTafsir(`${selSurah}:${tafsirVerse.verseN}`,opt.v);}} style={{flex:1,padding:"5px 8px",borderRadius:7,fontSize:10,cursor:"pointer",border:tafsirLang===opt.v?"1px solid #c9a84c44":"1px solid #222",background:tafsirLang===opt.v?"#c9a84c18":"#0d0d0d",color:tafsirLang===opt.v?"#c9a84c":"#555",fontWeight:tafsirLang===opt.v?700:400}}>
+                    {opt.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Verse text */}
+            <div style={{padding:"10px 16px 6px",borderBottom:"1px solid #1a1a1a",flexShrink:0}}>
+              <div style={{fontFamily:"'Scheherazade New',serif",fontSize:20,color:"#e8e0d0",direction:"rtl",textAlign:"right",lineHeight:1.8,marginBottom:tafsirVerse.translation?6:0}}>{tafsirVerse.text_uthmani}</div>
+              {tafsirVerse.translation&&<div style={{fontSize:12,color:"#888",fontStyle:"italic"}}>{tafsirVerse.translation}</div>}
+            </div>
+            {/* Tafsir text */}
+            <div style={{flex:1,overflowY:"auto",padding:"12px 16px 20px",WebkitOverflowScrolling:"touch"}}>
+              {tafsirLoading&&<div style={{textAlign:"center",color:"#555",padding:20}}>Chargement du tafsir…</div>}
+              {!tafsirLoading&&tafsirText&&(
+                <div style={{fontSize:13,color:"#bbb",lineHeight:1.9,direction:tafsirLang==='ar'?"rtl":"ltr",textAlign:tafsirLang==='ar'?"right":"left",fontFamily:tafsirLang==='ar'?"'Scheherazade New',serif":"inherit"}}>
+                  {tafsirText}
                 </div>
               )}
             </div>
-            <button onClick={()=>setTajweedInfo(null)} style={{background:"transparent",border:"none",color:"#555",fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>
           </div>
-          <div style={{fontSize:9,color:"#333",textAlign:"center"}}>Appuie ailleurs pour fermer</div>
         </div>
       )}
 
