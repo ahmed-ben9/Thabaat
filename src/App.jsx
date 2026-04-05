@@ -1960,7 +1960,7 @@ export default function App() {
       <GeoBg color={sec.color}/>
 
       {/* TOP HEADER */}
-      <div style={{position:"sticky",top:0,zIndex:10,background:hBg,backdropFilter:"blur(12px)",borderBottom:`1px solid ${bd}`,padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:hBg,backdropFilter:"blur(12px)",borderBottom:`1px solid ${bd}`,padding:"8px 14px",paddingTop:"max(8px,env(safe-area-inset-top))",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <div style={{fontFamily:"'Scheherazade New',serif",fontSize:19,color:"#c9a84c",lineHeight:1}}>ثبات</div>
           <div style={{fontSize:8,color:"#666",letterSpacing:2,textTransform:"uppercase",marginTop:1}}>Thabaat</div>
