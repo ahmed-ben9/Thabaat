@@ -192,7 +192,7 @@ const DEFAULT_STATE = {
   surahProgress:{}, murajaSessions:[], wird:{},
   streak:{count:0, lastDate:""},
   reminders:{hifz:{enabled:false,time:"06:00"}, muraja:{enabled:false,time:"20:00"}, wird:{enabled:false,time:"21:00"}},
-  profile:{}, wirdUseHijri:false, khatma:null, memGoal:null,
+  profile:{}, wirdUseHijri:false, khatma:null, memGoal:null, objectifs:[],
 };
 
 // ── UTILITIES ─────────────────────────────────────────────────────────────────
@@ -1088,7 +1088,7 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
                     </div>
                   </div>
                   {showTranslation&&(
-                    <div style={{fontSize:13,color:v._translation?"#bbb":"#444",lineHeight:1.9,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
+                    <div style={{fontSize:14,color:v._translation?"#bbb":"#444",lineHeight:1.9,marginTop:7,direction:"ltr",fontStyle:"italic",borderLeft:"2px solid #60a5fa33",paddingLeft:10}}>
                       {v._translation||"Traduction non disponible"}
                     </div>
                   )}
@@ -1189,6 +1189,366 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
 }
 
 
+// ── OBJECTIVES SYSTEM ─────────────────────────────────────────────────────────
+// This code is injected before the App component
+
+const OBJ_TYPES = {
+  hifz_surah:   { label:"Mémoriser sourate",      icon:"◈", section:"hifz"   },
+  hifz_verses:  { label:"Mémoriser des versets",   icon:"◈", section:"hifz"   },
+  muraja_juz:   { label:"Réviser un Juz",          icon:"↺", section:"muraja" },
+  muraja_hizb:  { label:"Réviser un Hizb",         icon:"↺", section:"muraja" },
+  muraja_surah: { label:"Réviser une sourate",     icon:"↺", section:"muraja" },
+  wird_hizb:    { label:"Lire X hizb/jour",        icon:"☽", section:"wird"   },
+  wird_juz:     { label:"Lire X juz/jour",         icon:"☽", section:"wird"   },
+};
+
+function daysLeft(dateFin) {
+  if(!dateFin) return null;
+  const d = Math.ceil((new Date(dateFin)-new Date())/(1000*60*60*24));
+  return d;
+}
+
+function getObjectiveProgress(obj, state) {
+  const pm = state.surahProgress||{};
+  const ms = state.murajaSessions||[];
+  const wird = state.wird||{};
+
+  if(obj.type === 'hifz_surah') {
+    const s = SURAHS.find(x=>x.n===obj.surahN);
+    if(!s) return 0;
+    return surahLearnedPct(pm[obj.surahN]?.learnedRanges, s.v);
+  }
+  if(obj.type === 'hifz_verses') {
+    const s = SURAHS.find(x=>x.n===obj.surahN);
+    if(!s) return 0;
+    const ranges = pm[obj.surahN]?.learnedRanges||[];
+    const target = (obj.verseTo||s.v) - (obj.verseFrom||1) + 1;
+    const learned = new Set();
+    ranges.forEach(r=>{
+      for(let v=Math.max(r.from,obj.verseFrom||1);v<=Math.min(r.to,obj.verseTo||s.v);v++) learned.add(v);
+    });
+    return Math.min(100, Math.round((learned.size/target)*100));
+  }
+  if(obj.type === 'muraja_juz') {
+    const j = getJuzInfo(obj.juzN);
+    const targetV = JUZ_VERSES[obj.juzN-1];
+    const since = obj.dateDebut||'2000-01-01';
+    const relevant = ms.filter(s=>s.date>=since);
+    const covered = new Set();
+    relevant.forEach(s=>{
+      const fs=s.range?.fromSurah,fv=s.range?.fromVerse,ts=s.range?.toSurah,tv=s.range?.toVerse;
+      if(!fs||!ts) return;
+      for(let sn=fs;sn<=ts;sn++){
+        const sur=SURAHS.find(x=>x.n===sn);if(!sur)continue;
+        const rf=sn===fs?fv:1,rt=sn===ts?tv:sur.v;
+        const jrf=sn===j.startSurah?j.startVerse:1,jrt=sn===j.endSurah?j.endVerse:sur.v;
+        for(let v=Math.max(rf,jrf);v<=Math.min(rt,jrt);v++) covered.add(sn+':'+v);
+      }
+    });
+    return Math.min(100, Math.round((covered.size/targetV)*100));
+  }
+  if(obj.type === 'muraja_hizb') {
+    const h = getHizbInfo(obj.hizbN);
+    const targetV = HIZB_VERSES[obj.hizbN-1];
+    const since = obj.dateDebut||'2000-01-01';
+    const relevant = ms.filter(s=>s.date>=since);
+    const covered = new Set();
+    relevant.forEach(s=>{
+      const fs=s.range?.fromSurah,fv=s.range?.fromVerse,ts=s.range?.toSurah,tv=s.range?.toVerse;
+      if(!fs||!ts) return;
+      for(let sn=fs;sn<=ts;sn++){
+        const sur=SURAHS.find(x=>x.n===sn);if(!sur)continue;
+        const rf=sn===fs?fv:1,rt=sn===ts?tv:sur.v;
+        const hrf=sn===h.startSurah?h.startVerse:1,hrt=sn===h.endSurah?h.endVerse:sur.v;
+        for(let v=Math.max(rf,hrf);v<=Math.min(rt,hrt);v++) covered.add(sn+':'+v);
+      }
+    });
+    return Math.min(100, Math.round((covered.size/targetV)*100));
+  }
+  if(obj.type === 'muraja_surah') {
+    const s = SURAHS.find(x=>x.n===obj.surahN);if(!s) return 0;
+    const since = obj.dateDebut||'2000-01-01';
+    const done = ms.some(sess=>{
+      if(sess.date<since) return false;
+      const fs=sess.range?.fromSurah,fv=sess.range?.fromVerse,ts=sess.range?.toSurah,tv=sess.range?.toVerse;
+      if(!fs||!ts) return false;
+      return (fs<obj.surahN||(fs===obj.surahN&&fv<=1))&&(ts>obj.surahN||(ts===obj.surahN&&tv>=s.v));
+    });
+    return done ? 100 : 0;
+  }
+  if(obj.type === 'wird_hizb' || obj.type === 'wird_juz') {
+    // Count days with target met since dateDebut
+    const mk = getMonthKey(state.wirdUseHijri||false);
+    const sessions = (wird[mk]?.sessions||[]).filter(s=>s.date>=(obj.dateDebut||'2000-01-01'));
+    const target = obj.quantite||1;
+    const unit = obj.type==='wird_hizb' ? HIZB_VERSES[0] : JUZ_VERSES[0];
+    // Check manual override
+    if(obj.manualProgress !== undefined) return obj.manualProgress;
+    // Auto: count total verses read / (target * unit * daysElapsed)
+    const daysElapsed = Math.max(1, Math.ceil((new Date()-new Date(obj.dateDebut||today()))/(1000*60*60*24)));
+    const totalV = sessions.reduce((s,sess)=>s+Math.max(0,(sess.toGlobal||0)-(sess.fromGlobal||0)+1),0);
+    const expectedV = target * (obj.type==='wird_hizb'?HIZB_VERSES[0]:JUZ_VERSES[0]) * daysElapsed;
+    return Math.min(100, Math.round((totalV/Math.max(1,expectedV))*100));
+  }
+  return 0;
+}
+
+function getEncouragementMessage(pct, daysLeft, type) {
+  if(pct>=100) return "MashaAllah ! Objectif atteint 🎉";
+  if(daysLeft===0) return "Dernier jour — allez, tu peux le faire !";
+  if(daysLeft<0)  return "Deadline dépassée — tu peux encore rattraper !";
+  if(pct===0 && daysLeft>7) return "Commence dès aujourd'hui, barakallahu fik";
+  if(pct<25 && daysLeft<=3) return "Peu de temps, concentre-toi !";
+  if(pct<50) return "Continue, tu es sur la bonne voie";
+  if(pct<75) return "Bon rythme, ne t'arrête pas !";
+  if(pct<90) return "Presque là, encore un effort !";
+  return "Excellent, la ligne d'arrivée est proche !";
+}
+
+function ObjectiveCard({obj, state, onEdit, onDelete, color}) {
+  const pct = getObjectiveProgress(obj, state);
+  const dl = daysLeft(obj.dateFin);
+  const msg = getEncouragementMessage(pct, dl, obj.type);
+  const urgent = dl !== null && dl <= 3 && pct < 100;
+  const done = pct >= 100;
+
+  return (
+    <div style={{background:done?"#0a1a0a":urgent?"#1a0a0a":"#111",border:`1px solid ${done?"#4ade8044":urgent?"#ef444433":color+"33"}`,borderRadius:10,padding:12,marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:7}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:700,color:done?"#4ade80":urgent?"#ef4444":color,marginBottom:2}}>{obj.label}</div>
+          <div style={{fontSize:10,color:"#555"}}>{OBJ_TYPES[obj.type]?.label}</div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+          {dl!==null&&<span style={{fontSize:10,color:urgent?"#ef4444":"#555",background:urgent?"#ef444411":"#1a1a1a",borderRadius:20,padding:"2px 7px"}}>{dl>0?`${dl}j`:dl===0?"Auj.":"Dépassé"}</span>}
+          <span style={{fontSize:13,fontWeight:700,color:done?"#4ade80":color,fontFamily:"monospace"}}>{pct}%</span>
+        </div>
+      </div>
+      <div style={{height:4,background:"#1a1a1a",borderRadius:4,overflow:"hidden",marginBottom:6}}>
+        <div style={{height:"100%",width:`${pct}%`,background:done?"#4ade80":urgent?"#ef4444":color,borderRadius:4,transition:"width .5s"}}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontSize:11,color:done?"#4ade8077":urgent?"#ef444477":"#555",fontStyle:"italic"}}>{msg}</div>
+        <div style={{display:"flex",gap:4}}>
+          {onEdit&&<button onClick={onEdit} style={{padding:"2px 7px",background:"transparent",border:"1px solid #333",borderRadius:5,color:"#555",fontSize:10,cursor:"pointer"}}>✏️</button>}
+          {onDelete&&<button onClick={onDelete} style={{padding:"2px 7px",background:"transparent",border:"1px solid #333",borderRadius:5,color:"#ef4444",fontSize:10,cursor:"pointer"}}>×</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ObjectivesView({state, persist}) {
+  const [objs, setObjs] = useState(state.objectifs||[]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({type:'hifz_surah',label:'',surahN:1,verseFrom:1,verseTo:7,juzN:1,hizbN:1,quantite:1,dateDebut:today(),dateFin:'',section:'hifz'});
+
+  useEffect(()=>{ setObjs(state.objectifs||[]); },[state.objectifs]);
+
+  const save = async(newObjs) => {
+    setObjs(newObjs);
+    await persist({...state, objectifs:newObjs});
+  };
+
+  const saveObj = async() => {
+    const obj = {...form, id:editing?.id||genId(), createdAt:today()};
+    obj.section = OBJ_TYPES[form.type]?.section||'hifz';
+    if(!obj.label.trim()) {
+      // Auto-generate label
+      const s = SURAHS.find(x=>x.n===form.surahN);
+      if(form.type==='hifz_surah') obj.label = `Mémoriser ${s?.name||''}`;
+      else if(form.type==='hifz_verses') obj.label = `Mémoriser ${s?.name||''} v.${form.verseFrom}→${form.verseTo}`;
+      else if(form.type==='muraja_juz') obj.label = `Réviser Juz ${form.juzN}`;
+      else if(form.type==='muraja_hizb') obj.label = `Réviser Hizb ${form.hizbN}`;
+      else if(form.type==='muraja_surah') obj.label = `Réviser ${s?.name||''}`;
+      else if(form.type==='wird_hizb') obj.label = `Lire ${form.quantite} Hizb/jour`;
+      else if(form.type==='wird_juz') obj.label = `Lire ${form.quantite} Juz/jour`;
+    }
+    const newObjs = editing ? objs.map(o=>o.id===editing.id?obj:o) : [...objs, obj];
+    await save(newObjs);
+    setShowForm(false); setEditing(null);
+    setForm({type:'hifz_surah',label:'',surahN:1,verseFrom:1,verseTo:7,juzN:1,hizbN:1,quantite:1,dateDebut:today(),dateFin:'',section:'hifz'});
+  };
+
+  const deleteObj = async(id) => { await save(objs.filter(o=>o.id!==id)); };
+  const startEdit = (obj) => { setEditing(obj); setForm({...obj}); setShowForm(true); };
+
+  const sections = ['hifz','muraja','wird'];
+  const selSurah = SURAHS.find(s=>s.n===form.surahN);
+
+  return (
+    <div>
+      <div style={{textAlign:"center",marginBottom:14}}>
+        <div style={{fontFamily:"'Scheherazade New',serif",fontSize:22,color:"#c9a84c"}}>الأهداف</div>
+        <div style={{fontSize:12,color:"#555",marginTop:2}}>Mes Objectifs</div>
+      </div>
+
+      {/* Objectives by section */}
+      {sections.map(sec=>{
+        const sObjs = objs.filter(o=>o.section===sec && getObjectiveProgress(o,state)<100);
+        if(!sObjs.length) return null;
+        const col = SECTIONS[sec]?.color||"#c9a84c";
+        return (
+          <div key={sec} style={{marginBottom:12}}>
+            <div style={{fontSize:10,color:col,textTransform:"uppercase",letterSpacing:1,marginBottom:7}}>
+              {SECTIONS[sec]?.icon} {SECTIONS[sec]?.label}
+            </div>
+            {sObjs.map(obj=>(
+              <ObjectiveCard key={obj.id} obj={obj} state={state} color={col}
+                onEdit={()=>startEdit(obj)} onDelete={()=>deleteObj(obj.id)}/>
+            ))}
+          </div>
+        );
+      })}
+
+      {/* Completed */}
+      {objs.filter(o=>getObjectiveProgress(o,state)>=100).length>0&&(
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:10,color:"#4ade80",textTransform:"uppercase",letterSpacing:1,marginBottom:7}}>✓ Accomplis</div>
+          {objs.filter(o=>getObjectiveProgress(o,state)>=100).map(obj=>(
+            <ObjectiveCard key={obj.id} obj={obj} state={state} color="#4ade80"
+              onDelete={()=>deleteObj(obj.id)}/>
+          ))}
+        </div>
+      )}
+
+      {objs.length===0&&!showForm&&(
+        <div style={{textAlign:"center",color:"#333",fontSize:13,padding:30}}>
+          Aucun objectif — commence par en créer un !
+        </div>
+      )}
+
+      {/* Form */}
+      {showForm&&(
+        <div style={{background:"#111",border:"1px solid #c9a84c33",borderRadius:10,padding:14,marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#c9a84c",marginBottom:12}}>{editing?"Modifier":"Nouvel objectif"}</div>
+
+          {/* Type */}
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Type</div>
+            <select value={form.type} onChange={e=>setForm({...form,type:e.target.value,section:OBJ_TYPES[e.target.value]?.section||'hifz'})}
+              style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:13,outline:"none"}}>
+              {Object.entries(OBJ_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+            </select>
+          </div>
+
+          {/* Surah selector */}
+          {['hifz_surah','hifz_verses','muraja_surah'].includes(form.type)&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Sourate</div>
+              <select value={form.surahN} onChange={e=>setForm({...form,surahN:Number(e.target.value),verseTo:SURAHS.find(s=>s.n===Number(e.target.value))?.v||1})}
+                style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:13,outline:"none"}}>
+                {SURAHS.map(s=><option key={s.n} value={s.n}>{s.n}. {s.name} — {s.ar}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Verse range for hifz_verses */}
+          {form.type==='hifz_verses'&&(
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"#555",marginBottom:4}}>Du verset</div>
+                <input type="number" min={1} max={selSurah?.v||1} value={form.verseFrom}
+                  onChange={e=>setForm({...form,verseFrom:Number(e.target.value)})}
+                  style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"#555",marginBottom:4}}>Au verset</div>
+                <input type="number" min={form.verseFrom} max={selSurah?.v||1} value={form.verseTo}
+                  onChange={e=>setForm({...form,verseTo:Number(e.target.value)})}
+                  style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          )}
+
+          {/* Juz selector */}
+          {form.type==='muraja_juz'&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Juz</div>
+              <select value={form.juzN} onChange={e=>setForm({...form,juzN:Number(e.target.value)})}
+                style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:13,outline:"none"}}>
+                {Array.from({length:30},(_,i)=>i+1).map(n=><option key={n} value={n}>Juz {n}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Hizb selector */}
+          {form.type==='muraja_hizb'&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Hizb</div>
+              <select value={form.hizbN} onChange={e=>setForm({...form,hizbN:Number(e.target.value)})}
+                style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:13,outline:"none"}}>
+                {Array.from({length:60},(_,i)=>i+1).map(n=><option key={n} value={n}>Hizb {n}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Quantite for wird */}
+          {['wird_hizb','wird_juz'].includes(form.type)&&(
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>{form.type==='wird_hizb'?"Hizb par jour":"Juz par jour"}</div>
+              <input type="number" min={1} max={10} value={form.quantite}
+                onChange={e=>setForm({...form,quantite:Number(e.target.value)})}
+                style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          )}
+
+          {/* Label (optional) */}
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:6}}>Label (optionnel)</div>
+            <input value={form.label} onChange={e=>setForm({...form,label:e.target.value})}
+              placeholder="Ex: Mémoriser Al-Kahf avant Ramadan"
+              style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"8px 10px",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+
+          {/* Dates */}
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:"#555",marginBottom:4}}>Date début</div>
+              <input type="date" value={form.dateDebut} onChange={e=>setForm({...form,dateDebut:e.target.value})}
+                style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"7px 9px",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:"#555",marginBottom:4}}>Date limite</div>
+              <input type="date" value={form.dateFin} onChange={e=>setForm({...form,dateFin:e.target.value})}
+                style={{width:"100%",background:"#0d0d0d",border:"1px solid #222",borderRadius:7,color:"#ddd",padding:"7px 9px",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          </div>
+
+          <div style={{display:"flex",gap:7}}>
+            <button onClick={saveObj} style={{flex:2,padding:11,background:"linear-gradient(135deg,#c9a84c22,#c9a84c40)",border:"1px solid #c9a84c55",borderRadius:8,color:"#c9a84c",fontSize:13,cursor:"pointer",fontWeight:700}}>
+              {editing?"Modifier":"Créer l'objectif"}
+            </button>
+            <button onClick={()=>{setShowForm(false);setEditing(null);}} style={{flex:1,padding:11,background:"#0d0d0d",border:"1px solid #222",borderRadius:8,color:"#555",fontSize:13,cursor:"pointer"}}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!showForm&&(
+        <button onClick={()=>setShowForm(true)} style={{width:"100%",padding:12,background:"linear-gradient(135deg,#c9a84c11,#c9a84c22)",border:"1px dashed #c9a84c44",borderRadius:9,color:"#c9a84c",fontSize:13,cursor:"pointer",fontWeight:700}}>
+          + Nouvel objectif
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ObjectivesDashboardBlock({state, section, color}) {
+  const objs = (state.objectifs||[]).filter(o=>o.section===section && getObjectiveProgress(o,state)<100);
+  if(!objs.length) return null;
+  // Show max 2 in dashboard
+  return (
+    <div style={{marginBottom:10}}>
+      {objs.slice(0,2).map(obj=>(
+        <ObjectiveCard key={obj.id} obj={obj} state={state} color={color}/>
+      ))}
+    </div>
+  );
+}
+
 // ── HIFZ DASHBOARD ────────────────────────────────────────────────────────────
 function HifzDashboard({state, onNewSession}) {
   const sec = SECTIONS.hifz;
@@ -1219,14 +1579,8 @@ function HifzDashboard({state, onNewSession}) {
         </div>
       </div>
 
-      {/* Consecutive days */}
-      <div style={{background:streakWarning?"linear-gradient(135deg,#1a0808,#280a0a)":"linear-gradient(135deg,#1a110a,#261800)",border:`1px solid ${streakWarning?"#ef444433":"#c9a84c33"}`,borderRadius:12,padding:"11px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:22}}>{streakWarning?"⚠️":"✨"}</span>
-        <div style={{flex:1}}>
-          <div style={{fontSize:19,fontWeight:700,color:streakWarning?"#ef4444":"#f59e0b",fontFamily:"monospace"}}>{streak.count} jour{streak.count!==1?"s":""} consécutifs</div>
-          <div style={{fontSize:11,color:streakWarning?"#ef444477":"#7a5a30",marginTop:2}}>{streakWarning?"Récite aujourd'hui pour ne pas perdre ta série !":"Continue ainsi — barakallahu fik"}</div>
-        </div>
-      </div>
+      {/* Objectives dashboard block */}
+      <ObjectivesDashboardBlock state={state} section="hifz" color={sec.color}/>
 
       {/* Stats */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
@@ -1519,6 +1873,8 @@ function MurajaDashboard({state, onNewSession}) {
 
   return (
     <div>
+      {/* Objectives dashboard block */}
+      <ObjectivesDashboardBlock state={state} section="muraja" color={sec.color}/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
         {[{l:"Total révisions",v:sessions.length,c:sec.color},{l:"Cette semaine",v:thisWeek,c:"#60a5fa"}].map(c=>(
           <div key={c.l} style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:9,padding:"13px 6px",textAlign:"center",position:"relative",overflow:"hidden"}}>
@@ -1709,6 +2065,8 @@ function WirdDashboard({state, onNewSession, persist}) {
 
   return (
     <div>
+      {/* Objectives dashboard block */}
+      <ObjectivesDashboardBlock state={state} section="wird" color={sec.color}/>
       {/* Month card */}
       <div style={{background:"linear-gradient(135deg,#001a0a,#002510)",border:`1px solid ${sec.color}22`,borderRadius:12,padding:15,marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:13}}>
@@ -2126,6 +2484,15 @@ export default function App() {
       const hhmm=`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
       const r=state.reminders||{};
       if(r.hifz?.enabled&&r.hifz.time===hhmm) sendNotification("Thabaat — Hifz ◈","C'est l'heure de ta séance d'apprentissage !");
+      // Check objectives deadlines
+      (state.objectifs||[]).forEach(obj=>{
+        const dl=daysLeft(obj.dateFin);
+        const pct=getObjectiveProgress(obj,state);
+        if(pct>=100) return;
+        if(dl===1) sendNotification("Thabaat — Objectif 🎯",`Dernier jour: ${obj.label}`);
+        if(dl===3) sendNotification("Thabaat — Objectif 🎯",`J-3: ${obj.label}`);
+        if(dl===0) sendNotification("Thabaat — Objectif 🎯",`Deadline aujourd'hui: ${obj.label}!`);
+      });
       if(r.muraja?.enabled&&r.muraja.time===hhmm) sendNotification("Thabaat — Muraja'a ↺","C'est l'heure de ta révision !");
       if(r.wird?.enabled&&r.wird.time===hhmm) sendNotification("Thabaat — Wird ☽","C'est l'heure de ta lecture du Coran !");
     },60000);
@@ -2198,6 +2565,7 @@ export default function App() {
         {/* Nav buttons */}
         <div style={{display:"flex",gap:4}}>
           <button onClick={()=>{setShowQuran(true);}} style={{width:34,height:34,borderRadius:8,background:"#111",border:"1px solid #c9a84c33",color:"#c9a84c",fontSize:18,cursor:"pointer"}}>📖</button>
+          <button onClick={()=>setGlobalTab(globalTab==="objectifs"?"main":"objectifs")} style={{width:29,height:29,borderRadius:7,background:globalTab==="objectifs"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="objectifs"?"#c9a84c44":"#222"}`,color:globalTab==="objectifs"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>O</button>
           <button onClick={()=>setGlobalTab(globalTab==="stats"?"main":"stats")} style={{width:29,height:29,borderRadius:7,background:globalTab==="stats"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="stats"?"#c9a84c44":"#222"}`,color:globalTab==="stats"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>S</button>
           <button onClick={()=>setGlobalTab(globalTab==="leaderboard"?"main":"leaderboard")} style={{width:29,height:29,borderRadius:7,background:globalTab==="leaderboard"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="leaderboard"?"#c9a84c44":"#222"}`,color:globalTab==="leaderboard"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>C</button>
           <button onClick={()=>setGlobalTab(globalTab==="profile"?"main":"profile")} style={{width:29,height:29,borderRadius:7,background:globalTab==="profile"?"#c9a84c22":"#111",border:`1px solid ${globalTab==="profile"?"#c9a84c44":"#222"}`,color:globalTab==="profile"?"#c9a84c":"#444",fontSize:11,cursor:"pointer",fontWeight:700}}>P</button>
@@ -2214,6 +2582,7 @@ export default function App() {
             <button onClick={()=>setGlobalTab("main")} style={{display:"flex",alignItems:"center",gap:5,background:"transparent",border:"none",color:"#555",cursor:"pointer",fontSize:12,marginBottom:13,padding:0}}>
               ← Retour
             </button>
+            {globalTab==="objectifs"&&<ObjectivesView state={state} persist={persist}/>}
             {globalTab==="stats"&&<StatsView state={state}/>}
             {globalTab==="leaderboard"&&<Leaderboard state={state} persist={persist}/>}
             {globalTab==="profile"&&<ProfileView state={state} persist={persist} darkMode={darkMode} setDarkMode={setDarkMode}/>}
