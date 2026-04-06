@@ -536,7 +536,7 @@ function SurahPanel({surahN, surahProgress, onClose, onSaveHifz, sec}) {
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",background:"#00000099"}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:"16px 16px 0 0",border:"1px solid #222",display:"flex",flexDirection:"column",maxHeight:"75vh"}}>
         {/* Scrollable content — padding-bottom leaves room for fixed button */}
-        <div style={{overflowY:"auto",padding:"16px 16px 80px",flex:1,WebkitOverflowScrolling:"touch"}}>
+        <div style={{overflowY:"auto",padding:"16px 16px 16px",flex:1,WebkitOverflowScrolling:"touch"}}>
           {/* Header — Enregistrer visible immediatement */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
             <div style={{flex:1,minWidth:0}}>
@@ -1066,9 +1066,9 @@ function QuranViewer({initialSurah=1, onClose, onBookmark, bookmark}) {
               const isPlaying = playingVerse===verseN;
               const isLooping = loopVerse===verseN;
               return (
-                <div key={v.id} onClick={()=>openTafsir(verseN, selSurah+":"+verseN, v.text_uthmani, v._translation)} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10,cursor:"pointer"}}>
+                <div key={v.id} style={{marginBottom:14,borderBottom:"1px solid #1a1a1a",paddingBottom:10}}>
                   <div style={{display:"flex",alignItems:"flex-start",gap:7,direction:"rtl"}}>
-                    <div style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right"}}>
+                    <div onClick={()=>openTafsir(verseN, selSurah+":"+verseN, v.text_uthmani, v._translation)} style={{flex:1,fontFamily:"'Scheherazade New',serif",fontSize:23,lineHeight:2,color:"#e8e0d0",direction:"rtl",textAlign:"right",cursor:"pointer"}}>
                       {showTajweed&&v.text_uthmani_tajweed
                         ?<span dangerouslySetInnerHTML={{__html:v.text_uthmani_tajweed}}/>
                         :v.text_uthmani}
@@ -1549,6 +1549,53 @@ function ObjectivesDashboardBlock({state, section, color}) {
   );
 }
 
+// ── SESSION CALENDAR ──────────────────────────────────────────────────────────
+function SeanceCalendar({sessions, color, label}) {
+  // Build last 10 weeks (70 days) contribution grid
+  const today_d = new Date();
+  const days = [];
+  for(let i=69; i>=0; i--) {
+    const d = new Date(today_d);
+    d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const count = sessions.filter(s=>s.date===key).length;
+    days.push({key, count, d});
+  }
+  // Group by week
+  const weeks = [];
+  for(let i=0; i<days.length; i+=7) weeks.push(days.slice(i,i+7));
+  const maxCount = Math.max(1,...days.map(d=>d.count));
+
+  return (
+    <div style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:10,padding:12,marginBottom:12}}>
+      <div style={{fontSize:10,color:"#555",textTransform:"uppercase",letterSpacing:1,marginBottom:9}}>{label} — 10 dernières semaines</div>
+      <div style={{display:"flex",gap:3,alignItems:"flex-start"}}>
+        {weeks.map((week,wi)=>(
+          <div key={wi} style={{display:"flex",flexDirection:"column",gap:3}}>
+            {week.map(day=>{
+              const intensity = day.count===0 ? 0 : Math.max(0.2, day.count/maxCount);
+              const bg = day.count===0 ? "#1a1a1a" : color+(Math.round(intensity*255).toString(16).padStart(2,'0'));
+              const isToday = day.key===today_d.toISOString().slice(0,10);
+              return (
+                <div key={day.key} title={`${day.key}: ${day.count} séance${day.count!==1?'s':''}`}
+                  style={{width:10,height:10,borderRadius:2,background:bg,border:isToday?`1px solid ${color}`:"none",flexShrink:0}}/>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:4,marginTop:7}}>
+        <span style={{fontSize:9,color:"#444"}}>Moins</span>
+        {[0,0.3,0.6,1].map((i,idx)=>(
+          <div key={idx} style={{width:9,height:9,borderRadius:2,background:i===0?"#1a1a1a":color+(Math.round(i*255).toString(16).padStart(2,'0'))}}/>
+        ))}
+        <span style={{fontSize:9,color:"#444"}}>Plus</span>
+      </div>
+    </div>
+  );
+}
+
+
 // ── HIFZ DASHBOARD ────────────────────────────────────────────────────────────
 function HifzDashboard({state, onNewSession}) {
   const sec = SECTIONS.hifz;
@@ -1625,6 +1672,10 @@ function HifzDashboard({state, onNewSession}) {
         </div>
       )}
 
+      {/* Session calendar */}
+      <SeanceCalendar
+        sessions={Object.values(pm).flatMap(p=>p.hifzSessions||[]).map(s=>({date:s.date}))}
+        color={sec.color} label="Séances Hifz"/>
       {/* Recent */}
       <div style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:10,padding:12,marginBottom:12}}>
         <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:8}}>Dernières séances</div>
@@ -1688,7 +1739,7 @@ function HifzList({state, onSaveHifz, filterMode, filterVal}) {
                 </div>
                 <span style={{fontSize:14,fontWeight:700,color:pct===100?sec.color:pct>0?"#f59e0b":"#2a2a2a",fontFamily:"monospace",flexShrink:0}}>{pct}%</span>
               </div>
-              {pct>0&&<div style={{height:3,background:"#1a1a1a",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${sec.color},${sec.color}88)`,borderRadius:3}}/></div>}
+              {pct>0&&<div style={{height:3,background:"#1a1a1a",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${sec.color},${sec.color}88)`,borderRadius:3}} className="progress-bar-fill"/></div>}
             </div>
           );
         })}
@@ -1871,10 +1922,60 @@ function MurajaDashboard({state, onNewSession}) {
   const thisWeek = useMemo(()=>sessions.filter(s=>(new Date()-new Date(s.date))/(1000*60*60*24)<=7).length, [sessions]);
   const errorRates = useMemo(()=>SURAHS.filter(s=>pm[s.n]?.hifzSessions?.length>0).map(s=>({name:s.name,n:s.n,rate:surahErrorRate(pm[s.n].hifzSessions)})).filter(x=>x.rate>0).sort((a,b)=>b.rate-a.rate).slice(0,4), [pm]);
 
+  // Smart suggestions: surahs due + not revised recently + high error rate
+  const suggestions = useMemo(()=>{
+    const learned = SURAHS.filter(s=>surahLearnedPct(pm[s.n]?.learnedRanges,s.v)>0);
+    return learned.map(s=>{
+      const sp = pm[s.n]||{};
+      const mastery = sp.mastery;
+      const due = mastery ? isDueForReview(mastery, sp.lastReviewed) : false;
+      const daysSince = sp.lastReviewed ? Math.floor((new Date()-new Date(sp.lastReviewed))/(1000*60*60*24)) : 999;
+      const errRate = surahErrorRate(sp.hifzSessions||[]);
+      const pct = surahLearnedPct(sp.learnedRanges, s.v);
+      // Score: higher = more urgent to revise
+      let score = 0;
+      if(due) score += 50;
+      score += Math.min(30, daysSince);
+      score += errRate * 5;
+      if(pct < 100) score += 10;
+      return {...s, score, due, daysSince, errRate, pct, mastery};
+    }).filter(s=>s.score>0).sort((a,b)=>b.score-a.score).slice(0,3);
+  }, [pm]);
+
   return (
     <div>
       {/* Objectives dashboard block */}
       <ObjectivesDashboardBlock state={state} section="muraja" color={sec.color}/>
+
+      {/* Smart suggestions */}
+      {suggestions.length>0&&(
+        <div style={{background:"linear-gradient(135deg,#1a0f00,#261500)",border:`1px solid ${sec.color}33`,borderRadius:10,padding:12,marginBottom:12}}>
+          <div style={{fontSize:10,color:sec.color,textTransform:"uppercase",letterSpacing:1,marginBottom:9}}>↺ Suggérées à réviser</div>
+          {suggestions.map((s,i)=>{
+            const m = s.mastery ? MASTERY[s.mastery] : null;
+            const urgency = s.due ? "urgent" : s.daysSince>7 ? "soon" : "normal";
+            const urgColor = urgency==="urgent" ? "#ef4444" : urgency==="soon" ? "#f59e0b" : sec.color;
+            return (
+              <div key={s.n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<suggestions.length-1?"1px solid #1a1a1a":"none"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <span style={{fontSize:13,color:"#ddd",fontWeight:500}}>{s.name}</span>
+                    <span style={{fontFamily:"'Scheherazade New',serif",fontSize:14,color:"#c9a84c66"}}>{s.ar}</span>
+                  </div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {s.due&&<span style={{fontSize:10,color:"#ef4444",background:"#ef444411",borderRadius:20,padding:"1px 7px"}}>En retard</span>}
+                    {!s.due&&s.daysSince<999&&<span style={{fontSize:10,color:urgColor,background:urgColor+"11",borderRadius:20,padding:"1px 7px"}}>{s.daysSince===0?"Auj.":s.daysSince+"j sans révision"}</span>}
+                    {m&&<span style={{fontSize:10,color:m.color,background:m.color+"22",borderRadius:20,padding:"1px 7px"}}>{m.label}</span>}
+                    {s.errRate>2&&<span style={{fontSize:10,color:"#ef4444",background:"#ef444411",borderRadius:20,padding:"1px 7px"}}>{s.errRate} err/s</span>}
+                  </div>
+                </div>
+                <button onClick={onNewSession} style={{padding:"4px 10px",background:urgColor+"18",border:`1px solid ${urgColor}44`,borderRadius:20,color:urgColor,fontSize:10,cursor:"pointer",flexShrink:0,fontWeight:600}}>Réviser →</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
         {[{l:"Total révisions",v:sessions.length,c:sec.color},{l:"Cette semaine",v:thisWeek,c:"#60a5fa"}].map(c=>(
           <div key={c.l} style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:9,padding:"13px 6px",textAlign:"center",position:"relative",overflow:"hidden"}}>
@@ -1890,11 +1991,14 @@ function MurajaDashboard({state, onNewSession}) {
           {errorRates.map(e=>(
             <div key={e.n} style={{marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:"#ccc"}}>{e.name}</span><span style={{color:e.rate>3?"#ef4444":"#f59e0b",fontFamily:"monospace",fontWeight:700}}>{e.rate} err/s</span></div>
-              <div style={{height:3,background:"#1a1a1a",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,e.rate/5*100)}%`,background:e.rate>3?"#ef4444":"#f59e0b",borderRadius:3}}/></div>
+              <div style={{height:3,background:"#1a1a1a",borderRadius:3,overflow:"hidden"}}><div className="progress-bar-fill" style={{height:"100%",width:`${Math.min(100,e.rate/5*100)}%`,background:e.rate>3?"#ef4444":"#f59e0b",borderRadius:3}}/></div>
             </div>
           ))}
         </div>
       )}
+      <SeanceCalendar
+        sessions={sessions.map(s=>({date:s.date}))}
+        color={sec.color} label="Séances Muraja'a"/>
       <div style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:10,padding:12,marginBottom:12}}>
         <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:8}}>Dernières révisions</div>
         {sorted.length===0
@@ -2119,6 +2223,9 @@ function WirdDashboard({state, onNewSession, persist}) {
 
       {/* Sessions */}
       <div style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:10,padding:12,marginBottom:12}}>
+      <SeanceCalendar
+        sessions={sessions.map(s=>({date:s.date}))}
+        color={sec.color} label="Wird — Séances"/>
         <div style={{fontSize:10,color:"#555",textTransform:"uppercase",marginBottom:8}}>Séances de lecture</div>
         {sessions.length===0
           ? <div style={{textAlign:"center",color:"#333",fontSize:13,padding:"8px 0"}}>Aucune lecture ce mois</div>
@@ -2424,6 +2531,14 @@ function CorrectorView({sessionId}) {
   return (
     <div style={{minHeight:"100vh",background:"#0a0a0a",color:"#ddd",fontFamily:"'DM Sans',sans-serif",padding:"18px 14px 40px",paddingTop:"max(18px,env(safe-area-inset-top))",maxWidth:500,margin:"0 auto"}}>
       <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+      <style>{`
+        * { -webkit-tap-highlight-color: transparent; }
+        button:active, [role=button]:active { transform: scale(0.94); transition: transform 0.1s; }
+        .progress-bar-fill { animation: fillBar 0.8s ease-out forwards; }
+        @keyframes fillBar { from { width: 0% !important; } }
+        .card-enter { animation: cardFade 0.3s ease-out; }
+        @keyframes cardFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
       <GeoBg/>
       <div style={{position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:16}}>
@@ -2554,14 +2669,8 @@ export default function App() {
           <div style={{fontFamily:"'Scheherazade New',serif",fontSize:19,color:"#c9a84c",lineHeight:1}}>ثبات</div>
           <div style={{fontSize:8,color:"#666",letterSpacing:2,textTransform:"uppercase",marginTop:1}}>Thabaat</div>
         </div>
-        {/* Connection + streak */}
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          {!connOk&&<div style={{fontSize:9,color:"#ef4444",background:"#ef444411",border:"1px solid #ef444433",borderRadius:20,padding:"2px 8px"}}>Hors ligne</div>}
-          <div style={{display:"flex",alignItems:"center",gap:4,background:streakWarning?"#1a0808":"#111",border:`1px solid ${streakWarning?"#ef444433":"#c9a84c22"}`,borderRadius:18,padding:"3px 9px"}}>
-            <span style={{fontSize:12}}>{streakWarning?"⚠️":"✨"}</span>
-            <span style={{fontFamily:"monospace",fontWeight:700,color:streakWarning?"#ef4444":"#f59e0b",fontSize:12}}>{streak.count}j</span>
-          </div>
-        </div>
+        {/* Connection status */}
+        {!connOk&&<div style={{fontSize:9,color:"#ef4444",background:"#ef444411",border:"1px solid #ef444433",borderRadius:20,padding:"2px 8px"}}>Hors ligne</div>}
         {/* Nav buttons */}
         <div style={{display:"flex",gap:4}}>
           <button onClick={()=>{setShowQuran(true);}} style={{width:34,height:34,borderRadius:8,background:"#111",border:"1px solid #c9a84c33",color:"#c9a84c",fontSize:18,cursor:"pointer"}}>📖</button>
